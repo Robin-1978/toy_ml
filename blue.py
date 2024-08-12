@@ -95,7 +95,7 @@ for window_size in window_sizes:
 
     # 创建数据集和数据加载器
     dataset = TensorDataset(inputs_encoded, targets)
-    batch_size = 128
+    batch_size = 1
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     # 创建模型
