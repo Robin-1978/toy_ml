@@ -8,7 +8,7 @@ import math
 
 
 class TransformerModel(nn.Module):
-    def __init__(self, num_class=16, embedding_size=32):
+    def __init__(self, num_class=16, embedding_size=1):
         super(TransformerModel, self).__init__()
         self.embedding = nn.Embedding(num_class, embedding_size)
         self.transformer = nn.Transformer(
@@ -27,17 +27,18 @@ class TransformerModel(nn.Module):
 def prepare_data(data_sequence, num_classes, input_seq_len, output_seq_len):
     data_sequence = data_sequence - 1
     num_samples = len(data_sequence) - input_seq_len - output_seq_len + 1
-    src = torch.tensor(
+    src = torch.tensor( np.array(
         [data_sequence[i : i + input_seq_len] for i in range(num_samples)]
-    )
-    tgt = torch.tensor(
+    ))
+    tgt = torch.tensor(np.array(
         [
             data_sequence[i + input_seq_len : i + input_seq_len + output_seq_len]
             for i in range(num_samples)
         ]
-    )
-    src = torch.nn.functional.one_hot(src, num_classes=num_classes)
-    tgt = torch.nn.functional.one_hot(tgt, num_classes=num_classes)
+    ))
+    # src = torch.clamp(src, 0, num_classes - 1)
+    src = torch.nn.functional.one_hot(src.to(torch.int64), num_classes=num_classes)
+    tgt = torch.nn.functional.one_hot(tgt.to(torch.int64), num_classes=num_classes)
     return src, tgt
     inputs, targets = [], []
 
@@ -66,7 +67,7 @@ for window_size in window_sizes:
 
     # 使用滑动窗口准备数据
     inputs, targets = prepare_data(
-        random_numbers, num_classes, window_size, predict_size
+        random_numbers , num_classes, window_size, predict_size
     )  # 使用原始数据生成 targets
     # targets = targets.unsqueeze(1)
     # 创建数据集和数据加载器
@@ -81,10 +82,10 @@ for window_size in window_sizes:
     model.to(device)
     # 损失函数和优化器
     loss_function = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
     # 训练模型
-    num_epochs = 1000  # 建议从一个较小的值开始，逐步调整
+    num_epochs = 100  # 建议从一个较小的值开始，逐步调整
     for epoch in range(num_epochs):
         model.train()
         for batch_inputs, batch_targets in dataloader:
@@ -101,8 +102,8 @@ for window_size in window_sizes:
     # last_sequence = inputs[-1].unsqueeze(0)
 
     # last_sequence = last_sequence.unsqueeze(0)  # 添加批次维度
-    last_sequence = torch.tensor(random_numbers[-window_size:]).unsqueeze(0)
-    last_sequence = torch.nn.functional.one_hot(last_sequence, num_classes=num_classes)
+    last_sequence = torch.tensor(random_numbers[-window_size:]).unsqueeze(0)-1
+    last_sequence = torch.nn.functional.one_hot(last_sequence.to(torch.int64), num_classes=num_classes)
 
     last_tgt = torch.zeros((1, predict_size, num_classes), dtype=torch.long)
     last_number = []
