@@ -74,7 +74,6 @@ def xavier_init(layer):
             elif 'bias' in name:
                 torch.nn.init.zeros_(param)
 
-
 # 生成随机数样本
 num_classes = 16
 data = np.loadtxt('./data/ssq/data.csv', delimiter=',', skiprows=1)
@@ -95,7 +94,7 @@ for window_size in window_sizes:
 
     # 创建数据集和数据加载器
     dataset = TensorDataset(inputs_encoded, targets)
-    batch_size = 1
+    batch_size = 64
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     # 创建模型

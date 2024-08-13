@@ -1,10 +1,14 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import DataModel
+import re
+
 
 def clean_text(text):
     """移除文本中的换行符和额外的空白字符。"""
-    return text.replace('\n', '').replace('\r', '').strip()
+    return text.replace("\n", "").replace("\r", "").strip()
+
 
 def fetch_data_from_page(page_number):
     url = f"https://caipiao.eastmoney.com/pub/Result/History/ssq?page={page_number}"
@@ -19,15 +23,15 @@ def fetch_data_from_page(page_number):
             # 如果遇到其他HTTP错误，抛出异常
             raise e
 
-    soup = BeautifulSoup(response.text, 'html.parser')
-    table = soup.find('table')
+    soup = BeautifulSoup(response.text, "html.parser")
+    table = soup.find("table")
     if table is None:
         return None, None
 
-    headers = [clean_text(header.text) for header in table.find_all('th')]
+    headers = [clean_text(header.text) for header in table.find_all("th")]
     rows = []
-    for row in table.find_all('tr')[1:]:  # 跳过表头
-        cols = row.find_all('td')
+    for row in table.find_all("tr")[1:]:  # 跳过表头
+        cols = row.find_all("td")
         cols = [clean_text(col.text) for col in cols]
         # 确保每行数据的列数与表头一致，并且行中有数据
         if any(cols):
@@ -35,22 +39,38 @@ def fetch_data_from_page(page_number):
 
     return headers, rows
 
+
 def split_ball_numbers(row):
-    """将第4列的号码分开成7列，并将其插入到原始数据的位置。"""
-    date = row[0]  # 第一个元素是日期或其他标识信息
-    numbers = row[3]  # 第四列包含号码
+
+    date_week = re.search(r"(\d{4}-\d{2}-\d{2})\((星期\w+)\)", row[1])
+    date_week = date_week.group(1, 2)
+    # date_week = row[1].extract(r'(\d{4}-\d{2}-\d{2})\((星期\w+)\)')
     # 将号码按分隔符拆分
-    split_numbers = [numbers[i:i+2] for i in range(0, len(numbers), 2)]
+    """将第4列的号码分开成7列，并将其插入到原始数据的位置。"""
+    numbers = row[3]  # 第四列包含号码
+    split_numbers = [numbers[i : i + 2] for i in range(0, len(numbers), 2)]
     # 确保分列后有7个号码
     if len(split_numbers) == 7:
-        return [row[0], row[1], row[2], *split_numbers, row[4], row[5], row[6], row[7], row[8], row[9]]
+        return [
+            row[0],
+            *date_week,
+            row[2],
+            *split_numbers,
+            row[4],
+            row[5],
+            row[6],
+            row[7],
+            row[8],
+            row[9],
+        ]
     else:
         return row
+
 
 def main():
     all_rows = []
     page_number = 1
-
+    session = DataModel.ConnectDB("data/ssq.db")
     while True:
         current_headers, rows = fetch_data_from_page(page_number)
         if current_headers is None and rows is None:
@@ -60,19 +80,71 @@ def main():
             all_rows.append(split_ball_numbers(row))
         page_number += 1
         print(f"第 {page_number-1} 页数据抓取完成")
-        break
-
+        # add rows to database when the key ID doesn't exist
+        isExist = False
+        for row in rows:
+            row = split_ball_numbers(row)
+            if session.query(DataModel.Ssq).filter_by(ID=row[0]).first() is None:
+                ssq = DataModel.Ssq(
+                    **{
+                        "ID": row[0],
+                        "Date": row[1],
+                        "Week": row[2],
+                        "Detail": row[3],
+                        "Ball_1": row[4],
+                        "Ball_2": row[5],
+                        "Ball_3": row[6],
+                        "Ball_4": row[7],
+                        "Ball_5": row[8],
+                        "Ball_6": row[9],
+                        "Ball_7": row[10],
+                        "Total": row[11],
+                        "Curent": row[12],
+                        "TopHit": row[13],
+                        "TopAmount": row[14],
+                        "SecHit": row[15],
+                        "SecAmount": row[16],
+                    }
+                )
+                session.add(ssq)
+            else:
+                print(f"已存在 {row[0]}")
+                isExist = True
+                # 退出下载
+        if isExist:
+            break
+    session.commit()
+    session.close()
     if all_rows:
         # 创建DataFrame，列数基于每行数据的数量
         num_columns = len(all_rows[0])  # 获取列数
-        column_names = ["ID", "Date", "Detail", "Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6", "Ball_7", "Total", "Curent", "Top_Hit", "Top_Amount", "Sec_Hit", "Sec_Amount"]  # 假设的列名
+        column_names = [
+            "ID",
+            "Date",
+            "Detail",
+            "Ball_1",
+            "Ball_2",
+            "Ball_3",
+            "Ball_4",
+            "Ball_5",
+            "Ball_6",
+            "Ball_7",
+            "Total",
+            "Curent",
+            "Top_Hit",
+            "Top_Amount",
+            "Sec_Hit",
+            "Sec_Amount",
+        ]  # 假设的列名
         df = pd.DataFrame(all_rows, columns=column_names)
         # df = pd.DataFrame(all_rows)
         # 保存到CSV文件
-        df.to_csv('ssq_data.csv', index=False, encoding='utf-8-sig')
+
+        # session.close()
         print("所有数据已成功保存到 'ssq_data.csv'")
     else:
         print("未抓取到任何数据。")
+
 
 if __name__ == "__main__":
     main()
