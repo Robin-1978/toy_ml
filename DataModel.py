@@ -5,7 +5,10 @@ from sqlalchemy.orm import sessionmaker
 import pandas as pd
 import logging
 
-logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+logging.basicConfig()
+# logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
+logging.getLogger('sqlalchemy.engine.Engine').disabled = True
+
 Base = declarative_base()
 
 #column_names = ["ID", "Date", "Detail", "Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6", "Ball_7", "Total", "Curent", "Top_Hit", "Top_Amount", "Sec_Hit", "Sec_Amount"]  # 假设的列名
@@ -32,6 +35,7 @@ class Ssq(Base):
 
 def ConnectDB(name):
     # 创建数据库引擎
+    # logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
     engine = create_engine('sqlite:///' + name, echo=True)
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
@@ -40,6 +44,7 @@ def ConnectDB(name):
 
 
 def LoadData(name):
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
     session = ConnectDB(name)
     df = pd.read_sql('SELECT * FROM ssq order by Date ASC', session.bind)
     session.close()
