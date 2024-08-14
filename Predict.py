@@ -17,6 +17,9 @@ def Predict(epoch_num, window_size):
     param = LSTMHyperParameters()
     # torch.save(model.state_dict(), f"LSTMModel_{window_size}.pth")
     model = LSTMModel.LSTMModel(input_size=param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    print(f"Using device: {device}")
     model.load_state_dict(torch.load(f"data/{epoch_num}/lstm_blue_{window_size}.pth", weights_only=True))
     model.eval()
     inputs = PrepareWindow(PrepareData(), window_size) - 1
@@ -50,3 +53,4 @@ if __name__ == "__main__":
     for window_size in window_sizes:
         result.append(Predict(param.epochs, window_size))
     CalcMost(result)
+

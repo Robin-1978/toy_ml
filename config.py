@@ -20,8 +20,9 @@ class LSTMRedBallHyperParameters:
         self.batch_size = 64
         self.learning_rate = 0.001
 
-        self.input_size = 33 * 6
-        self.hidden_size = 32
-        self.num_classes = 33 * 32 * 31
+        self.input_size = 6
+        self.embedding_size = 32
+        self.hidden_size = 64
+        self.num_classes = 33
         self.num_layers = 2
         self.dropout = 0.0

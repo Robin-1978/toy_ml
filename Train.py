@@ -59,15 +59,15 @@ def TrainRedLSTM(epoch_num):
         inputs, targets = PrepareRedWindow(data_values, window_size)
         
         # One-hot encoding
-        hot_encodes = torch.nn.functional.one_hot(inputs, num_classes=param.num_classes).float()  # Shape: (num_samples, window_size, num_classes)
+        # hot_encodes = torch.nn.functional.one_hot(inputs, num_classes=param.num_classes).float()  # Shape: (num_samples, window_size, num_classes)
         
-        model = LSTMModel.LSTMModel(input_size= param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
+        model = LSTMModel.LSTMRedModel(input_size= param.input_size, embedding_size=param.embedding_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=param.learning_rate)
 
         scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
 
-        dataset = TensorDataset(hot_encodes, targets)
+        dataset = TensorDataset(inputs, targets)
         batch_size = param.batch_size
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
@@ -77,7 +77,8 @@ def TrainRedLSTM(epoch_num):
             for batch_inputs, batch_targets in dataloader:
                 optimizer.zero_grad()
                 outputs = model(batch_inputs)  # Ensure the model output shape is compatible with targets
-                loss = criterion(outputs, batch_targets)
+                outputs = outputs.view(outputs.size(0), param.input_size, param.num_classes)
+                loss = criterion(outputs.view(-1, outputs.size(2)), batch_targets.view(-1))
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
@@ -90,7 +91,7 @@ def TrainRedLSTM(epoch_num):
                 print(f'Epoch [{epoch + 1}/{epoch_num}], Loss: {avg_loss:.4f}')
                 print(f"Current learning rate: {scheduler.get_last_lr()[0]}")
 
-        torch.save(model.state_dict(), f"LSTMModel_Red_{window_size}.pth")
+        torch.save(model.state_dict(), f"data/{epoch_num}/lstm_red_{window_size}.pth")
 
 def PrepareData():
     table = DataModel.LoadData("data/ssq.db")
@@ -127,6 +128,10 @@ def TrainLSTM(epoch_num):
         hot_encodes = torch.nn.functional.one_hot(inputs, num_classes=param.num_classes).float()  # Shape: (num_samples, window_size, num_classes)
         
         model = LSTMModel.LSTMModel(input_size= param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+        print(f"Using device: {device}")
+
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=param.learning_rate)
 
@@ -142,7 +147,7 @@ def TrainLSTM(epoch_num):
             for batch_inputs, batch_targets in dataloader:
                 optimizer.zero_grad()
                 outputs = model(batch_inputs)  # Ensure the model output shape is compatible with targets
-                loss = criterion(outputs, batch_targets)
+                loss = criterion(outputs.view, batch_targets)
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
@@ -158,6 +163,6 @@ def TrainLSTM(epoch_num):
         torch.save(model.state_dict(), f"data/{epoch_num}/lstm_blue_{window_size}.pth")
 
 if __name__ == '__main__':
-    # TrainRedLSTM()
     param = LSTMHyperParameters()
-    TrainLSTM(param.epochs)
+    TrainRedLSTM(param.epochs)
+    # TrainLSTM(param.epochs)
