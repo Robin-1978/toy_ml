@@ -107,44 +107,16 @@ def main():
                     }
                 )
                 session.add(ssq)
+                print(f"已添加 {row[0]}")
             else:
-                print(f"已存在 {row[0]}")
+                # print(f"已存在 {row[0]}")
                 isExist = True
                 # 退出下载
         if isExist:
             break
     session.commit()
     session.close()
-    if all_rows:
-        # 创建DataFrame，列数基于每行数据的数量
-        num_columns = len(all_rows[0])  # 获取列数
-        column_names = [
-            "ID",
-            "Date",
-            "Detail",
-            "Ball_1",
-            "Ball_2",
-            "Ball_3",
-            "Ball_4",
-            "Ball_5",
-            "Ball_6",
-            "Ball_7",
-            "Total",
-            "Curent",
-            "Top_Hit",
-            "Top_Amount",
-            "Sec_Hit",
-            "Sec_Amount",
-        ]  # 假设的列名
-        df = pd.DataFrame(all_rows, columns=column_names)
-        # df = pd.DataFrame(all_rows)
-        # 保存到CSV文件
-
-        # session.close()
-        print("所有数据已成功保存到 'ssq_data.csv'")
-    else:
-        print("未抓取到任何数据。")
-
+    print("数据抓取完成")
 
 if __name__ == "__main__":
     main()

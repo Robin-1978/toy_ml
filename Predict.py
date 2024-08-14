@@ -13,22 +13,24 @@ def PrepareWindow(seq_data, window_size):
     # print (inputs)
     return inputs
 
-def Predict(window_size):
+def Predict(epoch_num, window_size):
     param = LSTMHyperParameters()
     # torch.save(model.state_dict(), f"LSTMModel_{window_size}.pth")
     model = LSTMModel.LSTMModel(input_size=param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
-    model.load_state_dict(torch.load(f"LSTMModel_{window_size}.pth", weights_only=True))
+    model.load_state_dict(torch.load(f"data/{epoch_num}/lstm_blue_{window_size}.pth", weights_only=True))
     model.eval()
     inputs = PrepareWindow(PrepareData(), window_size) - 1
     hot_encodes = torch.nn.functional.one_hot(inputs, num_classes=16).float()
+    print(f"Window Size: {window_size}")
+    print(f"Inputs: {(inputs+1).reshape(-1).tolist()}")
 
     with torch.no_grad():
         output = model(hot_encodes)
-        predicted_class = torch.argmax(output, dim=1)
+        # predicted_class = torch.argmax(output, dim=1)
         predicted_numbers = (torch.topk(torch.softmax(output, dim=1), 3).indices + 1).reshape(-1)
         # predicted_number = predicted_class.item() + 1  # 转换回1到16
 
-    print(f"Window Size: {window_size}, Next Number: {predicted_numbers.tolist()}")
+    print(f"Predicted: {predicted_numbers.tolist()}\n")
     return predicted_numbers
 
 def CalcMost(results):
@@ -42,8 +44,9 @@ def CalcMost(results):
         print(f"{num} \t[{freq}]")
 
 if __name__ == "__main__":
-    window_sizes = [3,6,12,24,36,48,60]
+    param = LSTMHyperParameters()
+    window_sizes = param.window_sizes
     result = []
     for window_size in window_sizes:
-        result.append(Predict(window_size))
+        result.append(Predict(param.epochs, window_size))
     CalcMost(result)

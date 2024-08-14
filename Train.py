@@ -12,24 +12,45 @@ def PrepareRedData():
     return data
 
 def PrepareRedWindow(seq_data, window_size):
-    inputs, targets = [], []
-    for i in range(len(seq_data) - window_size):
-        # Convert numpy arrays to PyTorch tensors
-        inputs.append(torch.tensor(seq_data[i:i + window_size], dtype=torch.long))
-        targets.append(seq_data[i + window_size])
+    if seq_data is None or window_size < 1:
+        raise ValueError("seq_data and window_size must not be None or less than 1")
+
+    num_samples = len(seq_data) - window_size
     
-    # Stack tensors into a single tensor for inputs
-    inputs_tensor = torch.stack(inputs)  # Shape: (num_samples, window_size)
+    # Initialize numpy arrays with the correct size
+    inputs_array = np.zeros((num_samples, window_size, 6), dtype=np.int64)
+    targets_array = np.zeros((num_samples, 6), dtype=np.int64)
+
+    for i in range(num_samples):
+        start = i
+        end = i + window_size
+        inputs_array[i] = seq_data[start:end]
+        targets_array[i] = seq_data[end]
     
-    # Convert targets to a tensor
-    targets_tensor = torch.tensor(targets, dtype=torch.long)  # Shape: (num_samples,)
+    # Convert numpy arrays to PyTorch tensors
+    inputs_tensor = torch.tensor(inputs_array, dtype=torch.long)
+    targets_tensor = torch.tensor(targets_array, dtype=torch.long)
     
     return inputs_tensor, targets_tensor
+# def PrepareRedWindow(seq_data, window_size):
+#     inputs, targets = [], []
+#     for i in range(len(seq_data) - window_size):
+#         # Convert numpy arrays to PyTorch tensors
+#         inputs.append(torch.tensor(seq_data[i:i + window_size], dtype=torch.long))
+#         targets.append(seq_data[i + window_size])
+    
+#     # Stack tensors into a single tensor for inputs
+#     inputs_tensor = torch.stack(np.array(inputs))  # Shape: (num_samples, window_size)
+    
+#     # Convert targets to a tensor
+#     targets_tensor = torch.tensor(np.array(targets), dtype=torch.long)  # Shape: (num_samples,)
+    
+#     return inputs_tensor, targets_tensor
 
-def TrainRedLSTM(epoch_num=1000):
+def TrainRedLSTM(epoch_num):
     param = LSTMRedBallHyperParameters()
     data_values = PrepareRedData() - 1  # Adjust for zero-based indexing
-    window_sizes = [3, 6, 12, 24, 36, 48, 60]
+    window_sizes = param.window_sizes
     
     for window_size in window_sizes:
         print(f"\nWindow size: {window_size}")
@@ -47,7 +68,7 @@ def TrainRedLSTM(epoch_num=1000):
         scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
 
         dataset = TensorDataset(hot_encodes, targets)
-        batch_size = 64
+        batch_size = param.batch_size
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
         for epoch in range(param.epochs):
@@ -91,10 +112,10 @@ def PrepareWindow(seq_data, window_size):
     
     return inputs_tensor, targets_tensor
 
-def TrainLSTM(epoch_num=1000):
+def TrainLSTM(epoch_num):
     param = LSTMHyperParameters()
     data_values = PrepareData() - 1  # Adjust for zero-based indexing
-    window_sizes = [3, 6, 12, 24, 36, 48, 60]
+    window_sizes = param.window_sizes
     
     for window_size in window_sizes:
         print(f"\nWindow size: {window_size}")
@@ -112,7 +133,7 @@ def TrainLSTM(epoch_num=1000):
         scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
 
         dataset = TensorDataset(hot_encodes, targets)
-        batch_size = 64
+        batch_size = param.batch_size
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
         for epoch in range(param.epochs):
@@ -134,8 +155,9 @@ def TrainLSTM(epoch_num=1000):
                 print(f'Epoch [{epoch + 1}/{epoch_num}], Loss: {avg_loss:.4f}')
                 print(f"Current learning rate: {scheduler.get_last_lr()[0]}")
 
-        torch.save(model.state_dict(), f"LSTMModel_{window_size}.pth")
+        torch.save(model.state_dict(), f"data/{epoch_num}/lstm_blue_{window_size}.pth")
 
 if __name__ == '__main__':
-    TrainRedLSTM()
-    TrainLSTM()
+    # TrainRedLSTM()
+    param = LSTMHyperParameters()
+    TrainLSTM(param.epochs)
