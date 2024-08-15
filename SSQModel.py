@@ -86,7 +86,8 @@ class LSTMRedModel(nn.Module):
 class LSTMBallModel(nn.Module):
     def __init__(self, input_size, num_classes, hidden_size, num_layers=2, dropout=0.5):
         super(LSTMBallModel, self).__init__()
-
+        self.input_size = input_size
+        self.num_classes = num_classes
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.lstm = nn.LSTM(
@@ -116,12 +117,20 @@ class LSTMBallModel(nn.Module):
         lstm_out, _ = self.lstm(x, (h0, c0))
         out = self.fc(lstm_out[:, -1, :])
         return out
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        del self.lstm
+        del self.fc
 
 
 class LSTMEmbedBallModel(nn.Module):
     def __init__(self, input_size, num_classes, embedding_size, hidden_size, num_layers=2, dropout=0.5):
         super(LSTMEmbedBallModel, self).__init__()
-
+        self.input_size = input_size
+        self.num_classes = num_classes
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.embedding = nn.Embedding(num_classes, embedding_size)
@@ -150,9 +159,18 @@ class LSTMEmbedBallModel(nn.Module):
         x = self.embedding(x)
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        x = x.reshape(x.size(0), x.size(1), -1)
         lstm_out, _ = self.lstm(x, (h0, c0))
         out = self.fc(lstm_out[:, -1, :])
         return out
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        del self.embedding
+        del self.lstm
+        del self.fc
 
 class TransformerBallModel(nn.Module):
     def __init__(self, input_size, num_classes, nhead=4,num_layers=2, dropout=0.0):

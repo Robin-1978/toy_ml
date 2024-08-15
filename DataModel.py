@@ -54,8 +54,8 @@ def LoadSSQ():
     reds = table[["Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6"]].values
     return reds, blue
 
-def PrepareSSQ(window_size):
-    reds, blue = LoadSSQ()
+def PrepareSSQ(window_size, reds, blue):
+    # reds, blue = LoadSSQ()
     data_len = len(reds)
     if data_len != len(blue):
         raise ValueError("reds and blue must have the same length")
