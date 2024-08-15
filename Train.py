@@ -164,5 +164,5 @@ def TrainLSTM(epoch_num):
 
 if __name__ == '__main__':
     param = LSTMHyperParameters()
-    TrainRedLSTM(param.epochs)
+    # TrainRedLSTM(param.epochs)
     # TrainLSTM(param.epochs)
