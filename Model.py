@@ -36,6 +36,10 @@ class LSTMBlueModel(nn.Module):
         out = self.fc(out[:, -1, :])
         return out
 
+    def process_inputs(self, x, y):
+        hot_encodes = torch.nn.functional.one_hot(torch.tensor(x), num_classes=self.num_classes)
+        hot_encodes = hot_encodes.reshape(hot_encodes.size(0), hot_encodes.size(1), -1).float()
+        return hot_encodes, torch.tensor(y)
 
 class LSTMRedModel(nn.Module):
     def __init__(
@@ -81,11 +85,15 @@ class LSTMRedModel(nn.Module):
         out, _ = self.lstm(x, (h0, c0))
         out = self.fc(out[:, -1, :])
         return out
-
-
-class LSTMBallModel(nn.Module):
+    
+    def process_inputs(self, x, y):
+        hot_encodes = torch.nn.functional.one_hot(torch.tensor(x), num_classes=self.num_classes)
+        hot_encodes = hot_encodes.reshape(hot_encodes.size(0), hot_encodes.size(1), -1).float()
+        return hot_encodes, torch.tensor(y)
+    
+class LSTMOneHotBallModel(nn.Module):
     def __init__(self, input_size, num_classes, hidden_size, num_layers=2, dropout=0.5):
-        super(LSTMBallModel, self).__init__()
+        super(LSTMOneHotBallModel, self).__init__()
         self.input_size = input_size
         self.num_classes = num_classes
         self.hidden_size = hidden_size
@@ -117,6 +125,11 @@ class LSTMBallModel(nn.Module):
         lstm_out, _ = self.lstm(x, (h0, c0))
         out = self.fc(lstm_out[:, -1, :])
         return out
+    
+    def process_inputs(self, x, y):
+        hot_encodes = torch.nn.functional.one_hot(torch.tensor(x), num_classes=self.num_classes)
+        hot_encodes = hot_encodes.reshape(hot_encodes.size(0), hot_encodes.size(1), -1).float()
+        return hot_encodes, torch.tensor(y)
     
     def __enter__(self):
         return self
@@ -163,6 +176,9 @@ class LSTMEmbedBallModel(nn.Module):
         lstm_out, _ = self.lstm(x, (h0, c0))
         out = self.fc(lstm_out[:, -1, :])
         return out
+    
+    def process_inputs(self, x, y):
+        return torch.tensor(x), torch.tensor(y)    
     
     def __enter__(self):
         return self
