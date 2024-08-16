@@ -1,5 +1,5 @@
 import DataModel
-import Model
+import model
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -11,8 +11,7 @@ def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learnin
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), learning_rate)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
-    input_encode, target_encode = model.process_inputs(inputs, targets)
-    dataset = TensorDataset(input_encode, target_encode)
+    dataset = TensorDataset(*model.process_inputs(inputs, targets))
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     for epoch in range(epoch_num):
         model.train()
@@ -29,7 +28,7 @@ def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learnin
         scheduler.step(epoch_loss / len(dataloader))
         if (epoch + 1) % 10 == 0:
             avg_loss = epoch_loss / len(dataloader)
-            print(f'[{epoch + 1}/{epoch_num}], Loss: {avg_loss:.4f}, learning rate: {scheduler.get_last_lr()[0]}')
+            print(f'[{epoch + 1}/{epoch_num}], Model:{type(model).__name__} Loss: {avg_loss:.4f}, learning rate: {scheduler.get_last_lr()[0]}')
 
 def TrainSSQ(epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_sizes=[6,12,24,36,72,144]):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -38,35 +37,32 @@ def TrainSSQ(epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_sizes
         red_train, red_target, blue_train, blue_target = DataModel.PrepareSSQ(window_size, reds-1, blue-1)
         print(f"\n{window_size}")
 
-        with Model.LSTMEmbedBallModel(input_size= 1, num_classes=16, embedding_size=16, hidden_size=32, num_layers=2, dropout=0.0) as model_embed_blue:
+        with model.LSTMEmbedBallModel(input_size= 1, num_classes=16, embedding_size=16, hidden_size=32, num_layers=2, dropout=0.0) as model_embed_blue:
             file_path = f"data/lstm_embed_blue_{window_size}.pth"  
             try:
                 model_embed_blue.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))
             except:
-                os.remove(file_path)
-                print(f"removing {file_path}")
+                print(f"Create new {file_path}")
 
             TrainBall( model=model_embed_blue, inputs=blue_train, targets=blue_target, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
             torch.save(model_embed_blue.state_dict(), file_path)
         
-        with Model.LSTMOneHotBallModel(input_size= 1, num_classes=16, hidden_size=32, num_layers=2, dropout=0.0) as model_blue:
+        with model.LSTMOneHotBallModel(input_size= 1, num_classes=16, hidden_size=32, num_layers=2, dropout=0.0) as model_blue:
             file_path = f"data/lstm_onehot_blue_{window_size}.pth"  
             try:
                 model_blue.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))
             except:
-                os.remove(file_path)
-                print(f"removing {file_path}")
+                print(f"Create new {file_path}")
             
             TrainBall( model=model_blue, inputs=blue_train, targets=blue_target, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
             torch.save(model_blue.state_dict(), file_path)
 
-        with Model.LSTMEmbedBallModel(input_size= 6, num_classes=33, embedding_size=64, hidden_size=128, num_layers=2, dropout=0.0) as model_red:
+        with model.LSTMEmbedBallModel(input_size= 6, num_classes=33, embedding_size=64, hidden_size=128, num_layers=2, dropout=0.0) as model_red:
             file_path = f"data/lstm_embed_red_{window_size}.pth"
             try:
                 model_red.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))
             except:
-                os.remove(file_path)
-                print(f"removing {file_path}")
+                print(f"Create new {file_path}")
 
             TrainBall(model=model_red, inputs=red_train, targets=red_target, epoch_num=epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
             torch.save(model_red.state_dict(), file_path)

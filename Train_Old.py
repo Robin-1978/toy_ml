@@ -1,10 +1,10 @@
 import numpy as np
 import torch
 import DataModel
-import Model
+import model
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from config import LSTMHyperParameters, LSTMRedBallHyperParameters
+from config_old import LSTMHyperParameters, LSTMRedBallHyperParameters
 
 def PrepareRedData():
     table = DataModel.LoadData("data/ssq.db")
@@ -61,7 +61,7 @@ def TrainRedLSTM(epoch_num):
         # One-hot encoding
         # hot_encodes = torch.nn.functional.one_hot(inputs, num_classes=param.num_classes).float()  # Shape: (num_samples, window_size, num_classes)
         
-        model = Model.LSTMRedModel(input_size= param.input_size, embedding_size=param.embedding_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
+        model = model.LSTMRedModel(input_size= param.input_size, embedding_size=param.embedding_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=param.learning_rate)
 
@@ -127,7 +127,7 @@ def TrainLSTM(epoch_num):
         # One-hot encoding
         hot_encodes = torch.nn.functional.one_hot(inputs, num_classes=param.num_classes).float()  # Shape: (num_samples, window_size, num_classes)
         
-        model = Model.LSTMBlueModel(input_size= param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
+        model = model.LSTMBlueModel(input_size= param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
         print(f"Using device: {device}")

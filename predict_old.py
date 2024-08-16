@@ -1,7 +1,7 @@
 import torch
 import DataModel
-import Model
-from config import LSTMHyperParameters, LSTMRedBallHyperParameters
+import model
+from config_old import LSTMHyperParameters, LSTMRedBallHyperParameters
 
 def PrepareData():
     table = DataModel.LoadData("data/ssq.db")
@@ -27,7 +27,7 @@ def PrepareRedWindow(seq_data, window_size):
 def Predict(epoch_num, window_size):
     param = LSTMHyperParameters()
     # torch.save(model.state_dict(), f"LSTMModel_{window_size}.pth")
-    model = Model.LSTMBlueModel(input_size=param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
+    model = model.LSTMBlueModel(input_size=param.input_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     print(f"Using device: {device}")
@@ -50,7 +50,7 @@ def Predict(epoch_num, window_size):
 def PredictRed(epoch_num, window_size):
     param = LSTMRedBallHyperParameters()
     # torch.save(model.state_dict(), f"LSTMModel_{window_size}.pth")
-    model = Model.LSTMRedModel(input_size=param.input_size, embedding_size=param.embedding_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
+    model = model.LSTMRedModel(input_size=param.input_size, embedding_size=param.embedding_size, hidden_size=param.hidden_size, num_classes=param.num_classes, num_layers=param.num_layers, dropout=param.dropout)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     print(f"Using device: {device}")

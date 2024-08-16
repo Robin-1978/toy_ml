@@ -1,5 +1,5 @@
 import DataModel
-import Model
+import model
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
