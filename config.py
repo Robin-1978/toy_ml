@@ -1,8 +1,10 @@
 models = [
     {
         "name": "lstm_onehot_blue",
+        "module" : "DataModel",
+        "data" : "load_ssq_blue",
         "model": {
-            "module": "Model",
+            "module": "model",
             "name": "LSTMOneHotBallModel",
             "param": {
                 "input_size": 1,
@@ -15,6 +17,8 @@ models = [
     },
     {
         "name": "lstm_onehot_red",
+        "module" : "DataModel",
+        "data" : "load_ssq_red",
         "model": {
             "module": "model",
             "name": "LSTMOneHotBallModel",
@@ -29,6 +33,8 @@ models = [
     },
     {
         "name": "lstm_embed_blue",
+        "module" : "DataModel",
+        "data" : "load_ssq_blue",
         "model": {
             "module": "model",
             "name": "LSTMEmbedBallModel",
@@ -44,6 +50,8 @@ models = [
     },
     {
         "name": "lstm_embed_red",
+        "module" : "DataModel",
+        "data" : "load_ssq_red",
         "model": {
             "module": "model",
             "name": "LSTMEmbedBallModel",

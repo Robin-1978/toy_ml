@@ -48,6 +48,24 @@ def LoadData(name):
     session.close()
     return df
 
+def load_ssq_red():
+    table = LoadData("data/ssq.db")
+    reds = table[["Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6"]].values
+    return reds - 1
+
+def load_ssq_blue():
+    table = LoadData("data/ssq.db")
+    blue = np.expand_dims(table["Ball_7"].values, axis=1)
+    return blue - 1
+
+def prepare_data(sequence, window_size, input_size):
+    inputs = np.zeros((len(sequence) - window_size, window_size, input_size), dtype=np.int64)
+    targets = np.zeros((len(sequence) - window_size, input_size), dtype=np.int64)
+    for i in range(len(sequence) - window_size):
+        inputs[i] = sequence[i: i + window_size]
+        targets[i] = sequence[i + window_size]
+    return inputs, targets
+
 def LoadSSQ():
     table = LoadData("data/ssq.db")
     blue = np.expand_dims(table["Ball_7"].values, axis=1)
