@@ -92,20 +92,23 @@ class LSTMRedModel(nn.Module):
         return hot_encodes, torch.tensor(y)
     
 class LSTMBallModel(nn.Module):
-    def __init__(self, input_size, num_classes, hidden_size, num_layers=2, dropout=0.5):
+    def __init__(self, input_size, num_classes, output_size, hidden_size, num_layers=2, dropout=0.5):
         super(LSTMBallModel, self).__init__()
         self.input_size = input_size
         self.num_classes = num_classes
+        self.output_size = output_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.lstm = nn.LSTM(
-            input_size * num_classes,
+            input_size,
             hidden_size,
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout,
         )
-        self.fc = nn.Linear(hidden_size, num_classes * input_size)
+        self.fc1 = nn.Linear(hidden_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, num_classes * output_size)
 
         # Initialize weights
         self._init_weights()
@@ -123,20 +126,24 @@ class LSTMBallModel(nn.Module):
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
         lstm_out, _ = self.lstm(x, (h0, c0))
-        out = self.fc(lstm_out[:, -1, :])
+        x = self.fc1(lstm_out[:, -1, :])
+        x = torch.nn.functional.relu(x)
+        x = self.fc2(x)
+        x = torch.nn.functional.relu(x)
+        out = self.fc3(x)
         return out
     
     def process_inputs(self, x, y):
-        hot_encodes = torch.nn.functional.one_hot(torch.tensor(x), num_classes=self.num_classes)
-        hot_encodes = hot_encodes.reshape(hot_encodes.size(0), hot_encodes.size(1), -1).float()
-        return hot_encodes, torch.tensor(y)
+        return torch.tensor(x).to(torch.float), torch.tensor(y)
     
     def __enter__(self):
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         del self.lstm
-        del self.fc
+        del self.fc1
+        del self.fc2
+        del self.fc3
 
 
 class LSTMEmbedBallModel(nn.Module):

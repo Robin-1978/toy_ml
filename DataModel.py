@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import pandas as pd
 import logging
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
 logging.basicConfig()
 # logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
@@ -11,7 +12,7 @@ logging.getLogger('sqlalchemy.engine.Engine').disabled = True
 
 Base = declarative_base()
 
-#column_names = ["ID", "Date", "Detail", "Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6", "Ball_7", "Total", "Curent", "Top_Hit", "Top_Amount", "Sec_Hit", "Sec_Amount"]  # 假设的列名
+# column_names = ["ID", "Date", "Detail", "Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6", "Ball_7", "Total", "Curent", "Top_Hit", "Top_Amount", "Sec_Hit", "Sec_Amount"]  # 假设的列名
 class Ssq(Base):
     __tablename__ = 'ssq'
     ID = Column(String, primary_key=True)
@@ -55,16 +56,43 @@ def load_ssq_red():
 
 def load_ssq_blue():
     table = LoadData("data/ssq.db")
-    blue = np.expand_dims(table["Ball_7"].values, axis=1)
-    return blue - 1
+    table["odd_even"] = table["Ball_7"] % 2
+    table["big_small"] = (table["Ball_7"] > 8).astype(int)
 
-def prepare_data(sequence, window_size, input_size):
-    inputs = np.zeros((len(sequence) - window_size, window_size, input_size), dtype=np.int64)
-    targets = np.zeros((len(sequence) - window_size, input_size), dtype=np.int64)
-    for i in range(len(sequence) - window_size):
-        inputs[i] = sequence[i: i + window_size]
-        targets[i] = sequence[i + window_size]
-    return inputs, targets
+    table["step"] = table['Ball_7'].diff()
+    # table['step'].fillna(0, inplace=True) 
+    table.fillna({'step': 0}, inplace=True)
+    # table.fillna('step', 0, inplace=True)
+    scaler = MinMaxScaler()
+    table['step'] = scaler.fit_transform(table['step'].values.reshape(-1, 1))
+
+    # table["Ball_7"] = table["Ball_7"] -1
+    categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    one_hot_encoded = pd.get_dummies(table['Ball_7'], prefix='Ball_7')
+    column = []
+    for category in categories:
+        column_name = f'Ball_7_{category}'
+        column.append(column_name)
+        if column_name not in one_hot_encoded.columns:
+            one_hot_encoded[column_name] = 0
+    one_hot_encoded = one_hot_encoded[sorted(one_hot_encoded.columns)]
+    table = table.join(one_hot_encoded)
+    column.append('odd_even')
+    column.append('big_small')
+    column.append('step')
+    
+    return table[column], table["Ball_7"] - 1
+
+    # return blue - 1
+
+
+def prepare_data(inputs, targets, window_size, input_size, output_size):
+    window_inputs = np.zeros((len(inputs) - window_size, window_size, input_size), dtype=np.int64)
+    window_targets = np.zeros((len(inputs) - window_size, output_size), dtype=np.int64)
+    for i in range(len(inputs) - window_size):
+        window_inputs[i] = inputs[i: i + window_size]
+        window_targets[i] = targets[i + window_size]
+    return window_inputs, window_targets
 
 def LoadSSQ():
     table = LoadData("data/ssq.db")
@@ -96,5 +124,6 @@ def PrepareSSQ(window_size, reds, blue):
 
 
 if __name__ == "__main__":
-    red_train, red_target, blue_train, blue_target = PrepareSSQ(3)
-    print(red_train.shape, red_target.shape, blue_train.shape, blue_target.shape)
+    # red_train, red_target, blue_train, blue_target = PrepareSSQ(3)
+    # print(red_train.shape, red_target.shape, blue_train.shape, blue_target.shape)
+    print (load_ssq_blue())

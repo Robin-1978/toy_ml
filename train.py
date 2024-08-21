@@ -23,7 +23,7 @@ def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learnin
             batch_inputs, batch_targets = batch_inputs.to(device), batch_targets.to(device)
             optimizer.zero_grad() 
             outputs = model(batch_inputs)
-            outputs = outputs.view(outputs.size(0), model.input_size, model.num_classes)
+            outputs = outputs.view(outputs.size(0), model.output_size, model.num_classes)
             loss = criterion(outputs.view(-1, outputs.size(2)), batch_targets.view(-1))
             loss.backward()
             optimizer.step()
@@ -38,7 +38,7 @@ def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learnin
 def Train(models, epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_sizes=[6,12,24,36,72,144]):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     for model_info in models:
-        data = factory.load_data_from_config(model_info)
+        raw_inputs, raw_targets = factory.load_data_from_config(model_info)
         print("Model:", model_info["name"])
         for window_size in window_sizes:    
             with factory.create_model_from_config(model_info) as model:
@@ -48,20 +48,14 @@ def Train(models, epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_
                     model.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))
                 except:
                     print(f"Create new {file_path}")
-                inputs, targets = DataModel.prepare_data(data, window_size, model.input_size)
+                inputs, targets = DataModel.prepare_data(raw_inputs, raw_targets, window_size, model.input_size, model.output_size)
                 TrainBall( model=model, inputs=inputs, targets=targets, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
                 torch.save(model.state_dict(), file_path)
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    }, file_path)
-
 
 if __name__ == "__main__":
     model_names = factory.model_list(config.models)
     parser = argparse.ArgumentParser(description="Train arguments")
-    parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=1000)
+    parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=500)
     parser.add_argument("-b", "--batch_size", type=int, help="Batch Size", default=64)
     parser.add_argument("-l", "--learning_rate", type=float, help="Learning Rate", default=1e-3)
     parser.add_argument(

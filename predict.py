@@ -6,6 +6,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import factory
 import argparse
 import config
+import numpy as np
 
 def PredictBall(model, inputs, device='cpu'):
     model.eval()
@@ -13,7 +14,7 @@ def PredictBall(model, inputs, device='cpu'):
     inputs = inputs.reshape(inputs.size(0), -1).unsqueeze(0)
     with torch.no_grad():
         output = model(inputs)
-        output = output.view(output.size(0), model.input_size, model.num_classes)
+        output = output.view(output.size(0), model.output_size, model.num_classes)
         output = output.view(-1, output.size(2))
         softmax = torch.softmax(output, dim=1)
         # predicted_class = torch.argmax(output, dim=1)
@@ -26,7 +27,7 @@ def Predict(models, window_sizes):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     for model_info in models:
         with factory.create_model_from_config(model_info) as model:
-            data = factory.load_data_from_config(model_info)
+            raw_inputs, _ = factory.load_data_from_config(model_info)
             print("Model:", model_info["name"])
             for window_size in window_sizes:    
                 print(f"{window_size}")
@@ -37,7 +38,7 @@ def Predict(models, window_sizes):
                     print(f"Failed to load trained data {file_path}")
                     break
 
-                PredictBall( model=model, inputs=data[-window_size:], device=device)
+                PredictBall( model=model, inputs=raw_inputs[-window_size:].to_numpy(dtype=np.float32), device=device)
 
 if __name__ == "__main__":
     models = factory.model_list(config.models)
