@@ -91,9 +91,9 @@ class LSTMRedModel(nn.Module):
         hot_encodes = hot_encodes.reshape(hot_encodes.size(0), hot_encodes.size(1), -1).float()
         return hot_encodes, torch.tensor(y)
     
-class LSTMOneHotBallModel(nn.Module):
+class LSTMBallModel(nn.Module):
     def __init__(self, input_size, num_classes, hidden_size, num_layers=2, dropout=0.5):
-        super(LSTMOneHotBallModel, self).__init__()
+        super(LSTMBallModel, self).__init__()
         self.input_size = input_size
         self.num_classes = num_classes
         self.hidden_size = hidden_size

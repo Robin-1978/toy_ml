@@ -30,7 +30,7 @@ def Predict(models, window_sizes):
             print("Model:", model_info["name"])
             for window_size in window_sizes:    
                 print(f"{window_size}")
-                file_path = f"data/{model_info["name"]}_{window_size}.pth"  
+                file_path = f"models/{model_info["name"]}_{window_size}.pth"  
                 try:
                     model.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))
                 except:

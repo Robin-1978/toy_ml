@@ -47,7 +47,7 @@ def TrainSSQ(epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_sizes
             TrainBall( model=model_embed_blue, inputs=blue_train, targets=blue_target, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
             torch.save(model_embed_blue.state_dict(), file_path)
         
-        with model.LSTMOneHotBallModel(input_size= 1, num_classes=16, hidden_size=32, num_layers=2, dropout=0.0) as model_blue:
+        with model.LSTMBallModel(input_size= 1, num_classes=16, hidden_size=32, num_layers=2, dropout=0.0) as model_blue:
             file_path = f"data/lstm_onehot_blue_{window_size}.pth"  
             try:
                 model_blue.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))

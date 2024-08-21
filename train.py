@@ -6,6 +6,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import DataModel
+import logging
+logging.basicConfig(filename='training.log', level=logging.INFO)
 
 def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learning_rate=1e-3, device='cpu'):
     model.to(device)
@@ -30,17 +32,18 @@ def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learnin
         if (epoch + 1) % 10 == 0:
             avg_loss = epoch_loss / len(dataloader)
             print(f'[{epoch + 1}/{epoch_num}], Loss: {avg_loss:.4f}, learning rate: {scheduler.get_last_lr()[0]}')
+            logging.info(f'[{epoch + 1}/{epoch_num}], Loss: {avg_loss:.4f}, learning rate: {scheduler.get_last_lr()[0]}')
 
 
 def Train(models, epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_sizes=[6,12,24,36,72,144]):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     for model_info in models:
-        with factory.create_model_from_config(model_info) as model:
-            data = factory.load_data_from_config(model_info)
-            print("Model:", model_info["name"])
-            for window_size in window_sizes:    
+        data = factory.load_data_from_config(model_info)
+        print("Model:", model_info["name"])
+        for window_size in window_sizes:    
+            with factory.create_model_from_config(model_info) as model:
                 print(f"{window_size}")
-                file_path = f"data/{model_info["name"]}_{window_size}.pth"  
+                file_path = f"models/{model_info["name"]}_{window_size}.pth"  
                 try:
                     model.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))
                 except:
@@ -48,12 +51,17 @@ def Train(models, epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_
                 inputs, targets = DataModel.prepare_data(data, window_size, model.input_size)
                 TrainBall( model=model, inputs=inputs, targets=targets, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
                 torch.save(model.state_dict(), file_path)
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    }, file_path)
 
 
 if __name__ == "__main__":
     model_names = factory.model_list(config.models)
     parser = argparse.ArgumentParser(description="Train arguments")
-    parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=10)
+    parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=1000)
     parser.add_argument("-b", "--batch_size", type=int, help="Batch Size", default=64)
     parser.add_argument("-l", "--learning_rate", type=float, help="Learning Rate", default=1e-3)
     parser.add_argument(
