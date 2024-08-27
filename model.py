@@ -106,8 +106,6 @@ class LSTMBallModel(nn.Module):
             batch_first=True,
             dropout=dropout,
         )
-        # self.fc1 = nn.Linear(hidden_size, hidden_size)
-        # self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.out = nn.Linear(hidden_size, num_classes * output_size)
 
         # Initialize weights
@@ -126,11 +124,6 @@ class LSTMBallModel(nn.Module):
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
         lstm_out, _ = self.lstm(x, (h0, c0))
-        # x = self.fc1(lstm_out[:, -1, :])
-        # x = torch.nn.functional.relu(x)
-        # x = self.fc2(x)
-        # x = torch.nn.functional.relu(x)
-        # out = self.fc3(x)
         out = self.out(lstm_out[:, -1, :])
         return out
     

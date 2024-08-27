@@ -37,8 +37,10 @@ def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learnin
             batch_inputs, batch_targets = batch_inputs.to(device), batch_targets.to(device)
             optimizer.zero_grad() 
             outputs = model(batch_inputs)
-            outputs = outputs.view(outputs.size(0), model.output_size, model.num_classes)
-            loss = criterion(outputs.view(-1, outputs.size(2)), batch_targets.view(-1))
+            # outputs = outputs.view(outputs.size(0), model.output_size, model.num_classes)
+            # loss = criterion(outputs.view(-1, outputs.size(2)), batch_targets.view(-1))
+            outputs = outputs.view(-1, model.num_classes)  # Adjust output shape
+            loss = criterion(outputs, batch_targets.view(-1))
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
@@ -69,7 +71,8 @@ def TestBall(model, inputs, targets, device='cpu'):
             outputs = model(batch_inputs)
             _, predicted = torch.max(outputs, 1)
             total += batch_targets.size(0)
-            correct += (predicted == batch_targets.reshape(-1)).sum().item()
+            # correct += (predicted == batch_targets.reshape(-1)).sum().item()
+            correct += (predicted == batch_targets.view(-1)).sum().item()
         # TrainBall(model, batch_inputs, batch_targets, epoch_num = 10, batch_size=batch_size, learning_rate=1e-4, device=device)
     accuracy = correct / total if total > 0 else 0.0
     print(f'Test Accuracy: {accuracy:.4f}')
