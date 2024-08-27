@@ -6,13 +6,27 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import DataModel
+import numpy as np
+import random
 import logging
 logging.basicConfig(filename='training.log', level=logging.INFO)
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+seed = 42
+set_seed(seed)
 
 def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learning_rate=1e-3, device='cpu'):
     model.to(device)
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), learning_rate, weight_decay=1e-5)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
     dataset = TensorDataset(*model.process_inputs(inputs, targets))
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
@@ -56,7 +70,7 @@ def TestBall(model, inputs, targets, device='cpu'):
             _, predicted = torch.max(outputs, 1)
             total += batch_targets.size(0)
             correct += (predicted == batch_targets.reshape(-1)).sum().item()
-        TrainBall(model, batch_inputs, batch_targets, epoch_num = 10, batch_size=batch_size, learning_rate=1e-4, device=device)
+        # TrainBall(model, batch_inputs, batch_targets, epoch_num = 10, batch_size=batch_size, learning_rate=1e-4, device=device)
     accuracy = correct / total if total > 0 else 0.0
     print(f'Test Accuracy: {accuracy:.4f}')
 
@@ -73,13 +87,13 @@ def Train(models, epoch_num = 1000, batch_size = 64, learning_rate=1e-3, window_
                     model.load_state_dict(torch.load(file_path, map_location=device, weights_only=True))
                 except:
                     print(f"Create new {file_path}")
-                # inputs, targets = DataModel.prepare_data(raw_inputs, raw_targets, window_size, model.input_size, model.output_size)
-                # TrainBall( model=model, inputs=inputs, targets=targets, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
-                # torch.save(model.state_dict(), file_path)
-                train_inputs, train_targets, test_inputs, test_targets = DataModel.prepare_data(raw_inputs, raw_targets, window_size, model.input_size, model.output_size, 0.95)
-                TrainBall( model=model, inputs=train_inputs, targets=train_targets, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
-                TestBall( model=model, inputs=test_inputs, targets=test_targets, device=device)
+                inputs, targets = DataModel.prepare_data_all(raw_inputs, raw_targets, window_size, model.input_size, model.output_size)
+                TrainBall( model=model, inputs=inputs, targets=targets, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
                 torch.save(model.state_dict(), file_path)
+                # train_inputs, train_targets, test_inputs, test_targets = DataModel.prepare_data(raw_inputs, raw_targets, window_size, model.input_size, model.output_size, 0.95)
+                # TrainBall( model=model, inputs=train_inputs, targets=train_targets, epoch_num = epoch_num, batch_size=batch_size, learning_rate=learning_rate, device=device)
+                # TestBall( model=model, inputs=test_inputs, targets=test_targets, device=device)
+                # torch.save(model.state_dict(), file_path)
 
 
 if __name__ == "__main__":

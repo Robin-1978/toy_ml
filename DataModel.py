@@ -85,7 +85,7 @@ def load_ssq_blue():
 
     # return blue - 1
 
-def prepare_data(inputs, targets, window_size, input_size, output_size):
+def prepare_data_all(inputs, targets, window_size, input_size, output_size):
     window_inputs = np.zeros((len(inputs) - window_size, window_size, input_size), dtype=np.int64)
     window_targets = np.zeros((len(inputs) - window_size, output_size), dtype=np.int64)
     for i in range(len(inputs) - window_size):
@@ -93,7 +93,7 @@ def prepare_data(inputs, targets, window_size, input_size, output_size):
         window_targets[i] = targets[i + window_size]
     return window_inputs, window_targets
 
-def prepare_data(inputs, targets, window_size, input_size, output_size, train_percentage=0.8):
+def prepare_data(inputs, targets, window_size, input_size, output_size, train_percentage = 0.8):
     train_len = int(len(inputs) * train_percentage)
     # test_len = len(inputs) - train_len
     
