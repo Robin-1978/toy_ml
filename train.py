@@ -33,24 +33,30 @@ def TrainBall(model, inputs, targets, epoch_num = 1000, batch_size = 64, learnin
             avg_loss = epoch_loss / len(dataloader)
             print(f'[{epoch + 1}/{epoch_num}], Loss: {avg_loss:.4f}, learning rate: {scheduler.get_last_lr()[0]}')
             logging.info(f'[{epoch + 1}/{epoch_num}], Loss: {avg_loss:.4f}, learning rate: {scheduler.get_last_lr()[0]}')
+    # checkpoint = {
+    #     'model_state_dict': model.state_dict(),
+    #     'optimizer_state_dict': optimizer.state_dict(),
+    # }
+    # torch.save(checkpoint, 'checkpoint.pt')
 
 def TestBall(model, inputs, targets, device='cpu'):
     model.to(device)
-    model.eval()
+    batch_size = 1
     dataset = TensorDataset(*model.process_inputs(inputs, targets))
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
 
     correct = 0
     total = 0
-    with torch.no_grad():
-
-        for batch_inputs, batch_targets in dataloader:
+    for batch_inputs, batch_targets in dataloader:
+        model.eval()
+        with torch.no_grad():
             batch_inputs, batch_targets = batch_inputs.to(device), batch_targets.to(device)
             outputs = model(batch_inputs)
             _, predicted = torch.max(outputs, 1)
             total += batch_targets.size(0)
             correct += (predicted == batch_targets.reshape(-1)).sum().item()
+        TrainBall(model, batch_inputs, batch_targets, epoch_num = 10, batch_size=batch_size, learning_rate=1e-4, device=device)
     accuracy = correct / total if total > 0 else 0.0
     print(f'Test Accuracy: {accuracy:.4f}')
 
@@ -88,7 +94,7 @@ if __name__ == "__main__":
         type=int,
         nargs="+",
         help="Window Sizes",
-        default=[3, 6, 12, 24, 36, 72, 144],
+        default=[12],
     )
     parser.add_argument(
         "-m",
