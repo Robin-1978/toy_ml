@@ -88,6 +88,19 @@ def load_ssq_blue():
     
     return table[column], table["Ball_7"] - 1
 
+def load_ssq_blue_one():
+    table = LoadData("data/ssq.db")
+    table["odd_even"] = table["Ball_7"] % 2
+    table["big_small"] = (table["Ball_7"] > 8).astype(int)
+
+    table["diff"] = table['Ball_7'].diff()
+    column = []
+    column.append('Ball_7')
+    column.append('odd_even')
+    column.append('big_small')
+    column.append('diff')
+    
+    return table[column]
     # return blue - 1
 
 def prepare_data_all(inputs, targets, window_size, input_size, output_size):

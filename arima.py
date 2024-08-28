@@ -1,12 +1,7 @@
-import numpy as np
-from statsmodels.tsa.arima.model import ARIMA
-from sklearn.metrics import mean_squared_error
-import DataModel
-from statsmodels.tsa.stattools import adfuller
-import matplotlib.pyplot as plt
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
-import pmdarima as pm
+from statsmodels.tsa.arima.model import ARIMA
+import DataModel
+# import pmdarima as pm
 
 
 if __name__ == '__main__':
@@ -19,12 +14,13 @@ if __name__ == '__main__':
     # print(f"AIC: {model.aic()}")
     # print(f"BIC: {model.bic()}")
 
-    train_size = int(len(diff)-10)
-    train_data, test_data = diff[:train_size], diff[train_size:]
-    model = ARIMA(train_data, order=(5, 0, 0))
+    # train_size = int(len(diff)-10)
+    # train_data, test_data = diff[:train_size], diff[train_size:]
+
+
+    model = ARIMA(balls, order=(11, 0, 11))
     model_fit = model.fit()
     print(model_fit.summary())
-    forecast = model_fit.forecast(len(test_data))
-    print(forecast)
-    mse = mean_squared_error(test_data, forecast)
-    print('Mean Squared Error:', mse)
+    forecast = model_fit.forecast(10)
+    print(forecast.values.round().astype(int))
+
