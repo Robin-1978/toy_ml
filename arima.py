@@ -1,38 +1,30 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_squared_error
+import DataModel
+from statsmodels.tsa.stattools import adfuller
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
-# read from csv file path: ./data/ssq/data.csv , delimiter: ',' include header
-table = np.loadtxt('./data/ssq/data.csv', delimiter=',', skiprows=1)
+import pmdarima as pm
 
-#format : id,date,red_ball1,red_ball2,red_ball3,red_ball4,red_ball5,red_ball6,blue_ball
-# Get the blue ball numbers as input
-blue_ball = table[:,8]
-blue_ball = blue_ball[::-1]
 
-print (blue_ball)
+if __name__ == '__main__':
+    balls, diff = DataModel.load_ssq_blue_diff()
+    diff = diff[1:]
 
-# # 尝试不同的参数组合
-# for p in range(3):
-#     for d in range(2):
-#         for q in range(3):
-#             order = (p, d, q)
-#             try:
-#                 model = ARIMA(blue_ball, order=order)
-#                 model_fit = model.fit()
-#                 if model_fit.aic < best_aic:
-#                     best_aic = model_fit.aic
-#                     best_order = order
-#             except:
-#                 continue
+    # model = pm.auto_arima(diff, seasonal=False, stepwise=True, trace=True)
+    # # 输出最佳的 p, d, q 值
+    # print(f"Best ARIMA model: {model.order}")
+    # print(f"AIC: {model.aic()}")
+    # print(f"BIC: {model.bic()}")
 
-# print(f"Best ARIMA order: {best_order} with AIC: {best_aic}")
-
-# 拟合ARIMA模型
-model = ARIMA(blue_ball, order=(0, 0, 0))
-model_fit = model.fit()
-print(model_fit.summary())
-
-predicted_value = model_fit.forecast(steps=1)[0]
-predicted_value = int(predicted_value)
-print(predicted_value)
+    train_size = int(len(diff)-10)
+    train_data, test_data = diff[:train_size], diff[train_size:]
+    model = ARIMA(train_data, order=(5, 0, 0))
+    model_fit = model.fit()
+    print(model_fit.summary())
+    forecast = model_fit.forecast(len(test_data))
+    print(forecast)
+    mse = mean_squared_error(test_data, forecast)
+    print('Mean Squared Error:', mse)
