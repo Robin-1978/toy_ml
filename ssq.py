@@ -31,7 +31,7 @@ def create_dataset(data, time_step=1):
 if __name__ == "__main__":
     features = DataModel.load_ssq_blue_one()
     # features.drop(index=0) # frop the first row for NaN
-    features = features[1:]
+    features = features[1:-1]
     scaler_ball = MinMaxScaler(feature_range=(0, 1))
     scaler_diff = MinMaxScaler(feature_range=(0, 1))
     features['Ball_7'] = scaler_ball.fit_transform(features['Ball_7'].values.reshape(-1, 1))
