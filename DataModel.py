@@ -68,7 +68,7 @@ def load_ssq_blue():
     # table['step'].fillna(0, inplace=True) 
     table.fillna({'step': 0}, inplace=True)
     # table.fillna('step', 0, inplace=True)
-    scaler = MinMaxScaler()
+    scaler = MinMaxScaler(feature_range=(0, 1))
     table['step'] = scaler.fit_transform(table['step'].values.reshape(-1, 1))
 
     # table["Ball_7"] = table["Ball_7"] -1
