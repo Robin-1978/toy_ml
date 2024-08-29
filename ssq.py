@@ -31,24 +31,17 @@ class LSTMModel(nn.Module):
             elif "bias" in name:
                 torch.nn.init.zeros_(param)
 
-def create_dataset(data, time_step=1):
+def create_dataset_single(data, time_step=1):
     X, y = [], []
     for i in range(len(data) - time_step):
         X.append(data[i:(i + time_step), 0])
         y.append(data[i + time_step, 0])
     return np.array(X), np.array(y)
 
-def create_dataset(diff_data, balls_data, time_step=1):
-    X, y = [], []
-    for i in range(len(diff_data) - time_step):
-        X.append(np.concatenate((diff_data[i:(i + time_step)], balls_data[i:(i + time_step)])))
-        y.append(diff_data[i + time_step])
-    return np.array(X), np.array(y)
-
-def Simple():
+def Simple(last_id = 0):
     balls, diff = DataModel.load_ssq_blue_diff()
 
-    last_id = -10
+    # last_id = -10
 
     diff_data = diff.dropna().values
 
@@ -60,7 +53,7 @@ def Simple():
     
     time_step = 5  # Number of time steps to look back
     
-    X, y = create_dataset(scaled_data, time_step)
+    X, y = create_dataset_single(scaled_data, time_step)
 
     # Convert to PyTorch tensors
     X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1)  # Shape: [samples, time steps, features]
@@ -73,7 +66,7 @@ def Simple():
 
     model = LSTMModel(input_size, output_size, hidden_size, num_layers)
 
-    num_epochs = 100
+    num_epochs = 1000
     learning_rate = 0.001
     batch_size = 32
 
@@ -123,7 +116,18 @@ def Simple():
 
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
-def Complex():
+def create_dataset(diff_data, balls_data, time_step=1):
+    X, y = [], []
+    for i in range(len(diff_data) - time_step):
+        features = np.column_stack((
+            diff_data[i:i+time_step],
+            balls_data[i:i+time_step],
+        ))
+        X.append(features)
+        y.append(diff_data[i + time_step])
+    return np.array(X), np.array(y)
+
+def Complex(last_id = 0):
     balls, diff = DataModel.load_ssq_blue_diff()
 
     last_id = -10
@@ -145,17 +149,17 @@ def Complex():
     X, y = create_dataset(scaled_data, scaled_balls_data, time_step)
 
     # Convert to PyTorch tensors
-    X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1)  # Shape: [samples, time steps, features]
-    y = torch.tensor(y, dtype=torch.float32).unsqueeze(-1)
+    X = torch.tensor(X, dtype=torch.float32)  # Shape: [samples, time steps, features]
+    y = torch.tensor(y, dtype=torch.float32) #.unsqueeze(-1)
 
-    input_size = 1
+    input_size = 2
     output_size = 1
     hidden_size = 64
     num_layers = 3
 
     model = LSTMModel(input_size, output_size, hidden_size, num_layers)
 
-    num_epochs = 100
+    num_epochs = 1000
     learning_rate = 0.001
     batch_size = 32
 
@@ -191,7 +195,13 @@ def Complex():
             print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
     
     model.eval()
-    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32)
+    features = np.column_stack((
+        scaled_data[-time_step:],
+        scaled_balls_data[-time_step:],
+    )).reshape(1, time_step, 2)
+    
+    last_sequence = torch.tensor(features, dtype=torch.float32)
+
     predicted_diff_normalized = model(last_sequence).detach().numpy()
     print("Predicted difference normalized:", predicted_diff_normalized)
     
@@ -206,5 +216,5 @@ def Complex():
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
 if __name__ == '__main__':
-    # Simple()
-    Complex()
+    Simple(-1)
+    Complex(-1)
