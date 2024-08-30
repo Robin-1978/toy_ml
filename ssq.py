@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
+
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import DataModel
@@ -150,13 +152,76 @@ class LSTMWithSelfAttention(nn.Module):
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
         self.self_attention = SelfAttention(embed_size, heads)
         self.fc = nn.Linear(hidden_size, num_classes)
+        self._init_weights()
         
     def forward(self, x):
         h_lstm, _ = self.lstm(x)  # LSTM output
         attention_out = self.self_attention(h_lstm, h_lstm, h_lstm, mask=None)  # Apply Self-Attention
         out = self.fc(attention_out[:, -1, :])  # Use the output of the last time step
         return out
+    
+    def _init_weights(self):
+        for name, param in self.named_parameters():
+            if "weight_ih" in name:
+                torch.nn.init.xavier_uniform_(param)
+            elif "weight_hh" in name:
+                torch.nn.init.orthogonal_(param)
+            elif "bias" in name:
+                torch.nn.init.zeros_(param)
 
+
+class CNN_LSTM_Model(nn.Module):
+    def __init__(self, input_dim, lstm_hidden_dim, output_dim, kernel_size=3, cnn_out_channels=64):
+        super(CNN_LSTM_Model, self).__init__()
+        
+        # 一维卷积层
+        self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=cnn_out_channels, kernel_size=kernel_size, padding=1)
+        
+        # 最大池化层（可选）
+        self.pool = nn.MaxPool1d(kernel_size=2)
+        
+        # LSTM 层
+        self.lstm = nn.LSTM(input_size=cnn_out_channels, hidden_size=lstm_hidden_dim, num_layers=1, batch_first=True)
+        
+        # 全连接层
+        self.fc = nn.Linear(lstm_hidden_dim, output_dim)
+
+        self._init_weights()
+        
+    def forward(self, x):
+        # x 的形状是 (batch_size, seq_len, input_dim)
+        
+        # 转换输入以符合 Conv1d 的要求，(batch_size, input_dim, seq_len)
+        x = x.transpose(1, 2)
+        
+        # 卷积操作
+        x = F.relu(self.conv1d(x))
+        
+        # 池化操作（如果需要）
+        x = self.pool(x)
+        
+        # 转换回 LSTM 的输入要求 (batch_size, seq_len, cnn_out_channels)
+        x = x.transpose(1, 2)
+        
+        # LSTM 操作
+        lstm_out, _ = self.lstm(x)
+        
+        # 取最后一个时间步的输出
+        out = lstm_out[:, -1, :]
+        
+        # 全连接层输出
+        out = self.fc(out)
+        
+        return out
+    
+    def _init_weights(self):
+        for name, param in self.named_parameters():
+            if "weight_ih" in name:
+                torch.nn.init.xavier_uniform_(param)
+            elif "weight_hh" in name:
+                torch.nn.init.orthogonal_(param)
+            elif "bias" in name:
+                torch.nn.init.zeros_(param)
 def Simple(last_id = 0):
     balls, diff = DataModel.load_ssq_blue_diff()
 
@@ -187,10 +252,11 @@ def Simple(last_id = 0):
     embed_size = 64
     head_num = 4
 
-    # model = LSTMModel(input_size, output_size, hidden_size, num_layers)
-    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers)
-    model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num)
-
+    model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
+    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
+    # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num) #8
+    # model = CNN_LSTM_Model(input_size, hidden_size, output_size)  #7
+    
     num_epochs = 1000
     learning_rate = 0.01
     batch_size = 32
