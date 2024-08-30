@@ -1,4 +1,3 @@
-from sympy import factor
 import config
 import factory
 import argparse
