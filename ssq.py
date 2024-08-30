@@ -97,7 +97,7 @@ def Simple(last_id = 0):
     input_size = 1
     output_size = 1
     hidden_size = 64
-    num_layers = 2
+    num_layers = 3
 
     model = LSTMModel(input_size, output_size, hidden_size, num_layers)
 
@@ -269,5 +269,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="SSQ arguments")
     parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=500)
 
-    Simple(0)
+    Simple(-1)
     # Complex(-2)
