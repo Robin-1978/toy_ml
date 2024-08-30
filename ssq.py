@@ -71,6 +71,92 @@ def create_dataset_single(data, time_step=1):
         y.append(data[i + time_step, 0])
     return np.array(X), np.array(y)
 
+
+class AttentionLSTMModel(nn.Module):
+    def __init__(self, input_size, output_size, hidden_size, num_layers):
+        super(AttentionLSTMModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
+        self.attention = nn.Linear(hidden_size, 1) 
+        self.fc = nn.Linear(hidden_size, output_size)
+
+        self._init_weights()
+        
+    def forward(self, x):
+        h0 = torch.zeros(self.lstm.num_layers, x.size(0), self.lstm.hidden_size).to(x.device)
+        c0 = torch.zeros(self.lstm.num_layers, x.size(0), self.lstm.hidden_size).to(x.device)
+        out, _ = self.lstm(x, (h0, c0))  # out shape: (batch_size, seq_len, hidden_size)
+        attn_weights = torch.tanh(self.attention(out))  # 计算注意力权重
+        attn_weights = torch.softmax(attn_weights, dim=1)  # 归一化为概率
+        context_vector = torch.sum(attn_weights * out, dim=1)  # 加权求和得到上下文向量
+
+        out = self.fc(context_vector)
+
+        return out
+
+    def _init_weights(self):
+        for name, param in self.named_parameters():
+            if "weight_ih" in name:
+                torch.nn.init.xavier_uniform_(param)
+            elif "weight_hh" in name:
+                torch.nn.init.orthogonal_(param)
+            elif "bias" in name:
+                torch.nn.init.zeros_(param)
+
+class SelfAttention(nn.Module):
+    def __init__(self, embed_size, heads):
+        super(SelfAttention, self).__init__()
+        self.embed_size = embed_size
+        self.heads = heads
+        self.head_dim = embed_size // heads
+
+        assert (
+            self.head_dim * heads == embed_size
+        ), "Embedding size needs to be divisible by heads"
+
+        self.values = nn.Linear(self.head_dim, self.head_dim, bias=False)
+        self.keys = nn.Linear(self.head_dim, self.head_dim, bias=False)
+        self.queries = nn.Linear(self.head_dim, self.head_dim, bias=False)
+        self.fc_out = nn.Linear(heads * self.head_dim, embed_size)
+
+    def forward(self, values, keys, query, mask):
+        N = query.shape[0]  # Batch size
+        value_len, key_len, query_len = values.shape[1], keys.shape[1], query.shape[1]
+
+        # Split the embedding into self.heads different pieces
+        values = values.reshape(N, value_len, self.heads, self.head_dim)
+        keys = keys.reshape(N, key_len, self.heads, self.head_dim)
+        queries = query.reshape(N, query_len, self.heads, self.head_dim)
+
+        # Perform the dot-product attention calculation
+        energy = torch.einsum("nqhd,nkhd->nhqk", [queries, keys])  # (N, heads, query_len, key_len)
+
+        if mask is not None:
+            energy = energy.masked_fill(mask == 0, float("-1e20"))
+
+        attention = torch.softmax(energy / (self.embed_size ** (1 / 2)), dim=3)  # Scaled dot-product attention
+
+        out = torch.einsum("nhql,nlhd->nqhd", [attention, values]).reshape(
+            N, query_len, self.heads * self.head_dim
+        )  # (N, query_len, heads, head_dim) -> (N, query_len, embed_size)
+
+        out = self.fc_out(out)
+        return out
+    
+class LSTMWithSelfAttention(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes, embed_size, heads):
+        super(LSTMWithSelfAttention, self).__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
+        self.self_attention = SelfAttention(embed_size, heads)
+        self.fc = nn.Linear(hidden_size, num_classes)
+        
+    def forward(self, x):
+        h_lstm, _ = self.lstm(x)  # LSTM output
+        attention_out = self.self_attention(h_lstm, h_lstm, h_lstm, mask=None)  # Apply Self-Attention
+        out = self.fc(attention_out[:, -1, :])  # Use the output of the last time step
+        return out
+
 def Simple(last_id = 0):
     balls, diff = DataModel.load_ssq_blue_diff()
 
@@ -97,9 +183,13 @@ def Simple(last_id = 0):
     input_size = 1
     output_size = 1
     hidden_size = 64
-    num_layers = 3
+    num_layers = 2
+    embed_size = 64
+    head_num = 4
 
-    model = LSTMModel(input_size, output_size, hidden_size, num_layers)
+    # model = LSTMModel(input_size, output_size, hidden_size, num_layers)
+    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers)
+    model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num)
 
     num_epochs = 1000
     learning_rate = 0.01
@@ -269,5 +359,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="SSQ arguments")
     parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=500)
 
-    Simple(-1)
+    Simple(0)
     # Complex(-2)
