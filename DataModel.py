@@ -59,6 +59,10 @@ def load_ssq_blue_diff():
     table['diff'] = table['Ball_7'].diff()
     return table['Ball_7'], table['diff']
 
+def load_ssq_red_diff():
+    table = LoadData("data/ssq.db")
+    return table[['Ball_1', 'Ball_2', 'Ball_3', 'Ball_4', 'Ball_5', 'Ball_6']], table[['Ball_1', 'Ball_2', 'Ball_3', 'Ball_4', 'Ball_5', 'Ball_6']].diff()
+
 def load_ssq_blue():
     table = LoadData("data/ssq.db")
     table["odd_even"] = table["Ball_7"] % 2
