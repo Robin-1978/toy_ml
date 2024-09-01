@@ -32,7 +32,22 @@ class Ssq(Base):
     TopAmount = Column(String)
     SecHit = Column(String)
     SecAmount = Column(String)
-
+    
+class Fc3d(Base):
+    __tablename__ = 'fc3d'
+    ID = Column(String, primary_key=True)
+    Date = Column(String)  # 日期
+    Week = Column(String)  # 星期
+    Detail = Column(String)  # 详细信息
+    Ball_1 = Column(Integer)  # 第1个球号
+    Ball_2 = Column(Integer)  # 第2个球号
+    Ball_3 = Column(Integer)  # 第3个球号
+    Total = Column(String)  # 销售额
+    Curent = Column(String)  # 当前奖池
+    TopHit = Column(String)  # 一等奖中奖注数
+    TopAmount = Column(String)  # 一等奖单注奖金
+    SecHit = Column(String)  # 二等奖中奖注数
+    SecAmount = Column(String)  # 二等奖单注奖金
 
 def ConnectDB(name):
     engine = create_engine('sqlite:///' + name, echo=True)
@@ -58,6 +73,11 @@ def load_ssq_blue_diff():
     table = LoadData("data/ssq.db")
     table['diff'] = table['Ball_7'].diff()
     return table['Ball_7'], table['diff']
+
+def load_ssq_single_diff(num):
+    table = LoadData("data/ssq.db")
+    table['diff'] = table[f'Ball_{num}'].diff()
+    return table[f'Ball_{num}'], table['diff']
 
 def load_ssq_red_diff():
     table = LoadData("data/ssq.db")

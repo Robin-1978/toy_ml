@@ -12,6 +12,13 @@ from torch.utils.data import DataLoader, TensorDataset
 torch.manual_seed(42)
 np.random.seed(42)
 
+import datetime
+
+def log(message):
+    now = datetime.datetime.now()
+    timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
+    print(f"{timestamp} - {message}")
+
 class LSTMModel(nn.Module):
     def __init__(self, input_size, output_size, hidden_size, num_layers):
         super(LSTMModel, self).__init__()
@@ -178,7 +185,7 @@ class LSTMWithSelfAttention(nn.Module):
 
 
 class CNN_LSTM_Model(nn.Module):
-    def __init__(self, input_dim, lstm_hidden_dim, output_dim, num_layers=2, kernel_size=3, cnn_out_channels=16):
+    def __init__(self, input_dim, lstm_hidden_dim, output_dim, num_layers=2, dropout=0.2, kernel_size=3, cnn_out_channels=16):
         super(CNN_LSTM_Model, self).__init__()
         
         # 一维卷积层
@@ -188,7 +195,7 @@ class CNN_LSTM_Model(nn.Module):
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
         
         # LSTM 层
-        self.lstm = nn.LSTM(input_size=cnn_out_channels, hidden_size=lstm_hidden_dim, num_layers=num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size=cnn_out_channels, hidden_size=lstm_hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout)
         
         # 全连接层
         self.fc = nn.Linear(lstm_hidden_dim, output_dim)
@@ -257,13 +264,14 @@ def Simple(last_id = 0):
     output_size = 1
     hidden_size = 64
     num_layers = 2
+    dropout = 0.2
     embed_size = 64
     head_num = 4
 
     # model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
     # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
     # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num) #8
-    model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, 3, 16)  #7
+    model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 16)  #7
     
     num_epochs = 1000
     learning_rate = 0.01
@@ -319,6 +327,96 @@ def Simple(last_id = 0):
 
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
+def SimpleSingle(num, last_id = 0):
+    balls, diff = DataModel.load_ssq_single_diff(num)
+
+    # last_id = -10
+
+    diff_data = diff.dropna().values
+    balls_data = balls[1:]
+    if(last_id == 0):
+        last_id = len(diff_data)
+    diff_data_train = diff_data[:last_id]
+    # diff_data_train = diff_data
+
+    scaler = MinMaxScaler(feature_range=(-1, 1))
+    scaled_data = scaler.fit_transform(diff_data_train.reshape(-1, 1))
+    
+    time_step = 5  # Number of time steps to look back
+    
+    X, y = create_dataset_single(scaled_data, time_step)
+
+    # Convert to PyTorch tensors
+    X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1)  # Shape: [samples, time steps, features]
+    y = torch.tensor(y, dtype=torch.float32).unsqueeze(-1)
+
+    input_size = 1
+    output_size = 1
+    hidden_size = 64
+    num_layers = 2
+    dropout = 0.2
+    embed_size = 64
+    head_num = 4
+
+    # model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
+    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
+    # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num) #8
+    model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 16)  #7
+    
+    num_epochs = 1000
+    learning_rate = 0.01
+    batch_size = 32
+
+    # Loss and optimizer
+    criterion = nn.L1Loss()
+    # criterion = nn.MSELoss()
+    # criterion = nn.HuberLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)
+
+    # Create DataLoader for batch processing
+    dataset = TensorDataset(X, y)
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    # Training loop
+    for epoch in range(num_epochs):
+        model.train()
+        epoch_loss = 0
+        for batch_X, batch_y in data_loader:
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+        
+        # Step scheduler after each epoch
+        loss = epoch_loss / len(data_loader)
+        scheduler.step(loss)
+        
+        if (epoch + 1) % 100 == 0:  # Print every 5 epochs
+            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
+
+        if(scheduler.get_last_lr()[0] < 1e-5):
+            break
+    
+    model.eval()
+    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32)
+    predicted_diff_normalized = model(last_sequence).detach().numpy()
+    print("Predicted difference normalized:", predicted_diff_normalized)
+    
+    # Reverse normalization
+    predicted_diff = scaler.inverse_transform(predicted_diff_normalized)
+    print("Predicted difference:", predicted_diff[0][0])
+    
+    # Reverse prediction
+    last_observed_value = balls_data.iloc[last_id-1]
+    predicted_value = last_observed_value + predicted_diff
+
+    print(f'{num}: {last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
+
     
 def Simple6(last_id = 0):
     balls, diff = DataModel.load_ssq_red_diff()
@@ -345,15 +443,16 @@ def Simple6(last_id = 0):
 
     input_size = 6
     output_size = 6
-    hidden_size = 256
+    hidden_size = 128
     num_layers = 2
+    dropout = 0
     embed_size = 64
     head_num = 4
 
     # model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
     # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
     # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num) #8
-    model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, 3, 96)  #7
+    model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 64)  #7
     
     num_epochs = 1000
     learning_rate = 0.01
@@ -389,7 +488,7 @@ def Simple6(last_id = 0):
         scheduler.step(loss)
         
         if (epoch + 1) % 10 == 0:  # Print every 5 epochs
-            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
+            log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
 
         if(scheduler.get_last_lr()[0] < 1e-5):
             break
@@ -613,10 +712,21 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="SSQ arguments")
     # parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=500)
-
+    parser.add_argument("-b", "--ball_num", type=int, help="Ball Number", default=7)
+    parser.add_argument("-p", "--predict_num", type=int, help="Predict Number", default=0)
+    args = parser.parse_args()
     # for i in range(-10,0):
     #     SimpleClassifier(i)    
     # Complex(-2)
     # for i in range(-10,0):
     #     Simple(i)
-    Simple6(-1)
+    # Simple6(-2)
+    # Simple6(-2)
+    # SimpleSingle(1, 0)
+    # SimpleSingle(2, 0)
+    # SimpleSingle(3, 0)
+    # SimpleSingle(4, 0)
+    # SimpleSingle(5, 0)
+    # SimpleSingle(6, 0)
+    # SimpleSingle(7, 0)
+    SimpleSingle(args.ball_num, args.predict_num)
