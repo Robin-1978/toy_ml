@@ -57,10 +57,10 @@ def ConnectDB(name):
     return session
 
 
-def LoadData(name):
+def LoadData(name, table_name="ssq"):
     logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
     session = ConnectDB(name)
-    df = pd.read_sql('SELECT * FROM ssq order by Date ASC', session.bind)
+    df = pd.read_sql(f'SELECT * FROM {table_name} order by Date ASC', session.bind)
     session.close()
     return df
 
@@ -76,6 +76,11 @@ def load_ssq_blue_diff():
 
 def load_ssq_single_diff(num):
     table = LoadData("data/ssq.db")
+    table['diff'] = table[f'Ball_{num}'].diff()
+    return table[f'Ball_{num}'], table['diff']
+
+def load_fc3d_single_diff(num):
+    table = LoadData("data/fc3d.db", 'fc3d')
     table['diff'] = table[f'Ball_{num}'].diff()
     return table[f'Ball_{num}'], table['diff']
 

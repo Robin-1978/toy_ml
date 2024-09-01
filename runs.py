@@ -71,11 +71,16 @@ def statics_test(binary_sequence):
         print("The sequence appears to be random.")
 
 if __name__ == '__main__':
-    balls, diff = DataModel.load_ssq_blue_diff()
-
+    # balls, diff = DataModel.load_ssq_blue_diff()
+    # balls, diff = DataModel.load_ssq_single_diff(2)
+    balls, diff = DataModel.load_fc3d_single_diff(3)
+    max_num = balls.max()
+    mid = balls.median()
+    # mid = balls.mean()
+    # mid = balls.max()/2
     # big little
     print('big little')
-    binary_sequence = np.where(balls > 8, 1, 0)
+    binary_sequence = np.where(balls > mid, 1, 0)
     statics_test(binary_sequence)
 
     # diff
@@ -93,33 +98,33 @@ if __name__ == '__main__':
     binary_sequence = np.where(balls > balls.mean(), 1, 0)
     statics_test(binary_sequence)
 
-    observed_freq, _ = np.histogram(balls, bins=np.arange(0.5, 17.5, 1))
-    expected_freq = len(balls) / 16 * np.ones(16)
-    chi2_statistic, chi2_p_value = stats.chisquare(observed_freq, expected_freq)
-    print(f'Chi-Square Statistic: {chi2_statistic}, P-Value: {chi2_p_value}')
+    # observed_freq, _ = np.histogram(balls, bins=np.arange(0.5, max_num+0.5, 1))
+    # expected_freq = len(balls) / (max_num-1) * np.ones(max_num-1)
+    # chi2_statistic, chi2_p_value = stats.chisquare(observed_freq, expected_freq)
+    # print(f'Chi-Square Statistic: {chi2_statistic}, P-Value: {chi2_p_value}')
 
-    ks_statistic, ks_p_value = stats.kstest(balls, 'uniform', args=(1, 16))
+    ks_statistic, ks_p_value = stats.kstest(balls, 'uniform', args=(1, max_num))
     print(f'KS Statistic: {ks_statistic}, P-Value: {ks_p_value}')
 
 
-    from statsmodels.tsa.stattools import adfuller
-    import pandas as pd
+    # from statsmodels.tsa.stattools import adfuller
+    # import pandas as pd
 
-    # 假设data为你的时间序列数据
-    result = adfuller(balls)
-    print('ADF Statistic: %f' % result[0])
-    print('p-value: %f' % result[1])
-    print('Critical Values:')
-    for key, value in result[4].items():
-        print('\t%s: %.3f' % (key, value))
+    # # 假设data为你的时间序列数据
+    # result = adfuller(balls)
+    # print('ADF Statistic: %f' % result[0])
+    # print('p-value: %f' % result[1])
+    # print('Critical Values:')
+    # for key, value in result[4].items():
+    #     print('\t%s: %.3f' % (key, value))
 
 
-    from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-    import matplotlib.pyplot as plt
-    # 绘制ACF图和PACF图
-    plot_acf(balls, lags=20)
-    plot_pacf(balls, lags=20)
-    plt.show()
+    # from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+    # import matplotlib.pyplot as plt
+    # # 绘制ACF图和PACF图
+    # plot_acf(balls, lags=20)
+    # plot_pacf(balls, lags=20)
+    # plt.show()
     
     # import matplotlib.pyplot as plt
     # import seaborn as sns
