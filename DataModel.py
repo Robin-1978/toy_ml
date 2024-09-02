@@ -1,10 +1,11 @@
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String, Numeric
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import pandas as pd
 import logging
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sympy import Float
 
 logging.basicConfig()
 # logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
@@ -48,6 +49,16 @@ class Fc3d(Base):
     TopAmount = Column(String)  # 一等奖单注奖金
     SecHit = Column(String)  # 二等奖中奖注数
     SecAmount = Column(String)  # 二等奖单注奖金
+
+class PredictTable(Base):
+    __tablename__ = 'predict'
+    ID = Column(Integer, primary_key=True, autoincrement=True)
+    Basic = Column(Integer)
+    Step = Column(Numeric)    
+    Predict = Column(Numeric)
+    Goal = Column(Integer)
+    Diff = Column(Numeric)
+    Trend = Column(Integer)
 
 def ConnectDB(name):
     engine = create_engine('sqlite:///' + name, echo=True)

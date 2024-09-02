@@ -3,16 +3,26 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import random
+import time
 
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import DataModel
 from torch.utils.data import DataLoader, TensorDataset
 
-torch.manual_seed(42)
-np.random.seed(42)
 
 import datetime
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def log(message):
     now = datetime.datetime.now()
@@ -187,7 +197,7 @@ class LSTMWithSelfAttention(nn.Module):
 class CNN_LSTM_Model(nn.Module):
     def __init__(self, input_dim, lstm_hidden_dim, output_dim, num_layers=2, dropout=0.2, kernel_size=3, cnn_out_channels=16):
         super(CNN_LSTM_Model, self).__init__()
-        
+
         # 一维卷积层
         self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=cnn_out_channels, kernel_size=kernel_size, stride=1, padding=1)
         
@@ -227,6 +237,32 @@ class CNN_LSTM_Model(nn.Module):
         out = self.fc(out)
         
         return out
+    
+    def _init_weights(self):
+        for name, param in self.named_parameters():
+            if "weight_ih" in name:
+                torch.nn.init.xavier_uniform_(param)
+            elif "weight_hh" in name:
+                torch.nn.init.orthogonal_(param)
+            elif "bias" in name:
+                torch.nn.init.zeros_(param)
+
+class TransformerModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_heads, num_layers, dropout=0.2):
+        super(TransformerModel, self).__init__()
+        self.embedding = nn.Linear(input_dim, hidden_dim)
+        self.transformer = nn.Transformer(d_model=hidden_dim, nhead=num_heads, num_encoder_layers=num_layers, num_decoder_layers=num_layers, dropout=dropout)
+        self.fc = nn.Linear(hidden_dim, output_dim)
+
+        self._init_weights()
+
+    def forward(self, x):
+        # x: (sequence_length, batch_size, input_dim)
+        x = self.embedding(x)
+        # x: (sequence_length, batch_size, hidden_dim)
+        x = self.transformer(x, x)  # (sequence_length, batch_size, hidden_dim)
+        x = self.fc(x[-1])  # Use the last token of the sequence for classification/regression
+        return x
     
     def _init_weights(self):
         for name, param in self.named_parameters():
@@ -327,7 +363,7 @@ def Simple(last_id = 0):
 
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
-def SimpleSingle(num, last_id = 0):
+def SimpleSingle(num, last_id = 0, device = 'cpu'):
     balls, diff = DataModel.load_ssq_single_diff(num)
     # balls, diff = DataModel.load_fc3d_single_diff(num)
 
@@ -348,23 +384,25 @@ def SimpleSingle(num, last_id = 0):
     X, y = create_dataset_single(scaled_data, time_step)
 
     # Convert to PyTorch tensors
-    X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1)  # Shape: [samples, time steps, features]
-    y = torch.tensor(y, dtype=torch.float32).unsqueeze(-1)
+    X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
+    y = torch.tensor(y, dtype=torch.float32).unsqueeze(-1).to(device)
 
     input_size = 1
     output_size = 1
     hidden_size = 64
     num_layers = 2
-    dropout = 0.2
+    dropout = 0
     embed_size = 64
     head_num = 4
 
-    # model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
-    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
-    model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, dropout, embed_size, head_num) #8
-    # model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 16)  #7
+    # model = LSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #
+    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #13
+    # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, dropout, embed_size, head_num).to(device) #8 #6
+    # model = CNN_LSTM_Model(input_size, 64, output_size, num_layers, 0, 3, 16).to(device)  #7 #5
+    model = CNN_LSTM_Model(input_size, 128, output_size, num_layers, 0.2, 3, 16).to(device)  ### #3
+    # model = CNN_LSTM_Model(input_size, 96, output_size, num_layers, 0.2, 3, 32).to(device)  ### #7
     
-    num_epochs = 1000
+    num_epochs = 500
     learning_rate = 0.01
     batch_size = 32
 
@@ -374,7 +412,7 @@ def SimpleSingle(num, last_id = 0):
     # criterion = nn.HuberLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
 
     # Create DataLoader for batch processing
     dataset = TensorDataset(X, y)
@@ -398,14 +436,15 @@ def SimpleSingle(num, last_id = 0):
         scheduler.step(loss)
         
         if (epoch + 1) % 100 == 0:  # Print every 5 epochs
-            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
+            log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
 
         if(scheduler.get_last_lr()[0] < 1e-5):
+            log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
             break
     
     model.eval()
-    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32)
-    predicted_diff_normalized = model(last_sequence).detach().numpy()
+    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32).to(device)
+    predicted_diff_normalized = model(last_sequence).detach().cpu().numpy()
     print("Predicted difference normalized:", predicted_diff_normalized)
     
     # Reverse normalization
@@ -417,6 +456,7 @@ def SimpleSingle(num, last_id = 0):
     predicted_value = last_observed_value + predicted_diff
 
     print(f'{num}: {last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
+    return last_observed_value, predicted_diff[0][0], predicted_value[0][0], balls.iloc[last_id]
 
 def SimpleSingle3d(num, last_id = 0):
     # balls, diff = DataModel.load_ssq_single_diff(num)
@@ -606,8 +646,8 @@ def create_dataset_class(data, classes, time_step=1):
         y.append(classes[i + time_step, 0])
 
     return np.array(X), np.array(y)
-def SimpleClassifier(last_id = 0):
-    balls, diff = DataModel.load_ssq_blue_diff()
+def SimpleClassifier(num, last_id = 0, device='cpu'):
+    balls, diff = DataModel.load_ssq_single_diff(num)
 
     # last_id = -10
 
@@ -626,8 +666,8 @@ def SimpleClassifier(last_id = 0):
     X, y = create_dataset_class(scaled_data, diff_data_train.reshape(-1,1)+15, time_step)
 
     # Convert to PyTorch tensors
-    X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1)  # Shape: [samples, time steps, features]
-    y = torch.tensor(y, dtype=torch.long)
+    X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
+    y = torch.tensor(y, dtype=torch.long).to(device)
 
     input_size = 1
     output_size = 31
@@ -636,10 +676,11 @@ def SimpleClassifier(last_id = 0):
     embed_size = 64
     head_num = 4
 
-    model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
-    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
-    # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num) #8
-    # model = CNN_LSTM_Model(input_size, hidden_size, output_size)  #7
+    # model = LSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #
+    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #13
+    # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num).to(device) #8
+    model = CNN_LSTM_Model(input_size, hidden_size, output_size).to(device)  #4
+    # model = CNN_LSTM_Model(input_size, 96, output_size, num_layers, 0.2, 3, 32).to(device)  ### #7
     
     num_epochs = 500
     learning_rate = 0.01
@@ -652,7 +693,7 @@ def SimpleClassifier(last_id = 0):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
 
     # Create DataLoader for batch processing
     dataset = TensorDataset(X, y)
@@ -682,8 +723,8 @@ def SimpleClassifier(last_id = 0):
             break
     
     model.eval()
-    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32)
-    predicted_diffs = model(last_sequence)
+    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32).to(device)
+    predicted_diffs = model(last_sequence).detach().cpu()
     # predicted_diff = torch.max(predicted_diffs) -15
     predicted_diff = torch.argmax(predicted_diffs, dim=1) - 15
     # print("Predicted difference :", predicted_diff)
@@ -693,6 +734,7 @@ def SimpleClassifier(last_id = 0):
     predicted_value = last_observed_value + predicted_diff
 
     print(f'{last_observed_value} + {predicted_diff} = {predicted_value} -> {balls.iloc[last_id]}')
+    return last_observed_value, predicted_diff.item(), predicted_value.item(), balls.iloc[last_id]
 
 def create_dataset(diff_data, balls_data, time_step=1):
     X, y = [], []
@@ -799,7 +841,78 @@ def Complex(last_id = 0):
 
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
+def PredictAtt(device = 'cpu'):
+    session = DataModel.ConnectDB("data/att.db")
+
+    for idx in range(-100, -1):
+        base, diff, predict, goal = SimpleSingle(7, idx, device)
+        row = DataModel.PredictTable()
+        row.Basic = int(base)
+        row.Step = diff
+        row.Predict = predict
+        row.Goal = int(goal)
+        row.Diff = goal - predict
+        if(goal - base < 0):
+            if(diff < -0.5):
+                row.Trend = 1
+            else:
+                row.Trend = 0
+        elif (goal - base > 0):
+            if(diff > 0.5):
+                row.Trend = 1
+            else:
+                row.Trend = 0
+        else:
+            if(diff > -0.5 and diff < 0.5):
+                row.Trend = 1
+            else:
+                row.Trend = 0
+
+        # predict_row = DataModel.CreatePredictRow('att', base, diff, predict, goal, goal - predict)
+        session.add(row)
+        session.commit()
+    session.close()
+
+def PredictCnn(device):
+    for idx in range(-1, -100, -1):
+        # base, diff, predict, goal = SimpleSingle(7, idx, device)
+        base, diff, predict, goal = SimpleClassifier(7, idx, device)
+        session = DataModel.ConnectDB("data/cnn.db")
+        row = DataModel.PredictTable()
+        row.Basic = int(base)
+        row.Step = diff
+        row.Predict = predict
+        row.Goal = int(goal)
+        row.Diff = goal - predict
+        if(goal - base < 0):
+            if(diff < 0):
+                row.Trend = 1
+            else:
+                row.Trend = 0
+        elif (goal - base > 0):
+            if(diff > 0):
+                row.Trend = 1
+            else:
+                row.Trend = 0
+        else:
+            if(diff > -0.5 and diff < 0.5):
+                row.Trend = 1
+            else:
+                row.Trend = 0
+        session.add(row)
+        for attemp in  range(5):
+            try:
+                session.commit()
+            except:
+                time.sleep(1)
+        session.close()
+
 if __name__ == '__main__':
+    set_seed(42)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.multiprocessing.set_start_method('spawn')
+
+    print(f"Using device: {device}")
     import argparse
     parser = argparse.ArgumentParser(description="SSQ arguments")
     # parser.add_argument("-n", "--epoch_num", type=int, help="Train Epoch Number", default=500)
@@ -820,6 +933,10 @@ if __name__ == '__main__':
     # SimpleSingle(5, 0)
     # SimpleSingle(6, 0)
     # SimpleSingle(7, 0)
-    SimpleSingle(args.ball_num, args.predict_num)
+    # SimpleSingle(args.ball_num, args.predict_num)
     # SimpleSingle3d(args.ball_num, args.predict_num)
     # Simple(0)
+    # PredictAtt()
+    PredictCnn(device)
+    # SimpleSingle(7, 0, device)
+    # SimpleClassifier(0, device)
