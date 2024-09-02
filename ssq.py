@@ -251,7 +251,8 @@ class TransformerModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_heads, num_layers, dropout=0.2):
         super(TransformerModel, self).__init__()
         self.embedding = nn.Linear(input_dim, hidden_dim)
-        self.transformer = nn.Transformer(d_model=hidden_dim, nhead=num_heads, num_encoder_layers=num_layers, num_decoder_layers=num_layers, dropout=dropout)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads, dropout=dropout, batch_first=True)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.fc = nn.Linear(hidden_dim, output_dim)
 
         self._init_weights()
@@ -260,8 +261,10 @@ class TransformerModel(nn.Module):
         # x: (sequence_length, batch_size, input_dim)
         x = self.embedding(x)
         # x: (sequence_length, batch_size, hidden_dim)
-        x = self.transformer(x, x)  # (sequence_length, batch_size, hidden_dim)
-        x = self.fc(x[-1])  # Use the last token of the sequence for classification/regression
+        x = self.transformer(x)  # (sequence_length, batch_size, hidden_dim)
+        # x = x.permute(1, 0, 2)  # (batch_size, sequence_length, hidden_dim)
+        x = x[:, -1, :]  # (batch_size, hidden_dim)
+        x = self.fc(x)  # Use the last token of the sequence for classification/regression
         return x
     
     def _init_weights(self):
@@ -679,9 +682,9 @@ def SimpleClassifier(num, last_id = 0, device='cpu'):
     # model = LSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #
     # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #13
     # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num).to(device) #8
-    model = CNN_LSTM_Model(input_size, hidden_size, output_size).to(device)  #4
-    # model = CNN_LSTM_Model(input_size, 96, output_size, num_layers, 0.2, 3, 32).to(device)  ### #7
-    
+    # model = CNN_LSTM_Model(input_size, hidden_size, output_size).to(device)  #4
+    model = CNN_LSTM_Model(input_size, 96, output_size, num_layers, 0.2, 3, 32).to(device)  ### #4
+    # model = TransformerModel(input_size, 64, output_size, 4, 2, 0.2).to(device) #4
     num_epochs = 500
     learning_rate = 0.01
     batch_size = 32
@@ -716,12 +719,12 @@ def SimpleClassifier(num, last_id = 0, device='cpu'):
         loss = epoch_loss / len(data_loader)
         scheduler.step(loss)
         
-        if (epoch + 1) % 100 == 0:  # Print every 5 epochs
+        if (epoch + 1) % 5 == 0:  # Print every 5 epochs
             print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
 
         if(scheduler.get_last_lr()[0] < 1e-5):
             break
-    
+    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
     model.eval()
     last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32).to(device)
     predicted_diffs = model(last_sequence).detach().cpu()
@@ -937,6 +940,6 @@ if __name__ == '__main__':
     # SimpleSingle3d(args.ball_num, args.predict_num)
     # Simple(0)
     # PredictAtt()
-    PredictCnn(device)
+    # PredictCnn(device)
     # SimpleSingle(7, 0, device)
-    # SimpleClassifier(0, device)
+    SimpleClassifier(7, 0, device)
