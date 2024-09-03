@@ -5,6 +5,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import random
 import time
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
@@ -168,6 +169,89 @@ def Simple(last_id = 0):
 
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
+def EvaluateModel(model, num, device = 'cpu'):
+    balls, diff = DataModel.load_ssq_single_diff(num)
+    diff_data = diff.dropna().values
+
+    # diff_data_train = diff_data
+
+    scaler = MinMaxScaler(feature_range=(-1, 1))
+    scaled_data = scaler.fit_transform(diff_data.reshape(-1, 1))
+    
+    time_step = 5  # Number of time steps to look back
+    
+    X, y = create_dataset_single(scaled_data, time_step)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+    # Convert to PyTorch tensors
+    X_train = torch.tensor(X_train, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
+    y_train = torch.tensor(y_train, dtype=torch.float32).unsqueeze(-1).to(device)
+    X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
+    y_test = torch.tensor(y_test, dtype=torch.float32).unsqueeze(-1).to(device)
+
+    # Create DataLoader for batch processing
+
+
+    # Train the model
+    model.to(device)
+    num_epochs = 500
+    learning_rate = 0.01
+    batch_size = 32
+    
+    criterion = nn.L1Loss()
+    # criterion = nn.MSELoss()
+    # criterion = nn.HuberLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+    dataset = TensorDataset(X_train, y_train)
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    model.train()
+    for epoch in range(num_epochs):
+        model.train()
+        epoch_loss = 0
+        for batch_X, batch_y in data_loader:
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+        
+        # Step scheduler after each epoch
+        loss = epoch_loss / len(data_loader)
+        scheduler.step(loss)
+        
+        if (epoch + 1) % 100 == 0:  # Print every 5 epochs
+            log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
+
+        if(scheduler.get_last_lr()[0] < 1e-5):
+            log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
+            break
+
+    model.eval()
+    outputs = model(X_test)
+    loss = criterion(outputs, y_test)
+    log(f'Loss: {loss:.4f}')
+    predicted_diff_normalized = outputs.detach().numpy()
+    predicted_diff = scaler.inverse_transform(predicted_diff_normalized)
+    y_test = y_test.numpy()  # 真实值也转换为 NumPy 数组
+    y_test = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()  # 逆变换真实值
+    # 计算均方误差和平均绝对误差
+    mse = mean_squared_error(y_test, predicted_diff)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(y_test, predicted_diff)
+    # 计算准确率,误差在 -0.5 和 0.5 之间的比例
+    accuracy = np.mean(np.abs(y_test - predicted_diff) < 0.5)
+
+    # 打印评估指标
+    print(f'Accuracy: {accuracy:.4f}')
+    print(f'Loss: {loss.item():.4f}')
+    print(f'MSE: {mse:.4f}')
+    print(f'RMSE: {rmse:.4f}')
+    print(f'MAE: {mae:.4f}')
+
 def SimpleSingle(num, last_id = 0, device = 'cpu'):
     balls, diff = DataModel.load_ssq_single_diff(num)
     # balls, diff = DataModel.load_fc3d_single_diff(num)
@@ -192,8 +276,6 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
     X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
     y = torch.tensor(y, dtype=torch.float32).unsqueeze(-1).to(device)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-    
     input_size = 1
     output_size = 1
     hidden_size = 64
@@ -745,4 +827,5 @@ if __name__ == '__main__':
     # PredictAtt()
     # PredictCnn(device)
     # predict_all()
-    SimpleSingle(args.ball_num, args.predict_num)
+    # SimpleSingle(args.ball_num, args.predict_num)
+    EvaluateModel(CNN_LSTM_Model(1, 1, 64, 2, 0, 3, 16), 7)
