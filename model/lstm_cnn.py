@@ -6,6 +6,8 @@ class CNN_LSTM_Model(nn.Module):
         super(CNN_LSTM_Model, self).__init__()
         # 一维卷积层
         self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=cnn_out_channels, kernel_size=kernel_size, stride=1, padding=1)
+        
+        self.relu = nn.ReLU()
         # 最大池化层（可选）
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
         # LSTM 层
@@ -20,7 +22,8 @@ class CNN_LSTM_Model(nn.Module):
         # 转换输入以符合 Conv1d 的要求，(batch_size, input_dim, seq_len)
         x = x.transpose(1, 2)
         # 卷积操作
-        x = torch.relu(self.conv1d(x))
+        x = self.conv1d(x)
+        x = self.relu(x)
         # 池化操作（如果需要）
         x = self.pool(x)
         # 转换回 LSTM 的输入要求 (batch_size, seq_len, cnn_out_channels)

@@ -10,7 +10,7 @@ from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import DataModel
 from torch.utils.data import DataLoader, TensorDataset
-
+from sklearn.model_selection import train_test_split # for splitting training and testing data
 
 import datetime
 from model.lstm_attention import LSTM_Attention
@@ -18,6 +18,7 @@ from model.lstm import LSTM_Model
 from model.gru import GRU_Model
 from model.lstm_cnn import CNN_LSTM_Model
 from model.gru_cnn import CNN_GRU_Model
+from model.lstm_cnn_attn import CNN_LSTM_ATTN
 
 def set_seed(seed):
     random.seed(seed)
@@ -191,6 +192,8 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
     X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
     y = torch.tensor(y, dtype=torch.float32).unsqueeze(-1).to(device)
 
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    
     input_size = 1
     output_size = 1
     hidden_size = 64
@@ -201,10 +204,11 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
 
     # model = LSTM_Model(input_size, output_size, hidden_size num_layers, dropout=0).to(device) #
     # model = GRU_Model(input_size, hidden_size, output_size, num_layers, dropout=0).to(device)
-    # model = CNN_LSTM_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device)  #7 #5,3
+    model = CNN_LSTM_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device)  #7 #5,3
     # model = CNN_LSTM_Model(input_size, output_size, 96, num_layers, 0.2, 3, 32).to(device)  ### #4,5
     # model = LSTM_Attention(1, 1, 64, 2, 4, 0).to(device)
-    model = CNN_GRU_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device)  #7 #5,3
+    # model = CNN_GRU_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device) 
+    # model = CNN_LSTM_ATTN(input_size, output_size, 64, 2, 3, 16, 2, 0).to(device)
     num_epochs = 500
     learning_rate = 0.01
     batch_size = 32
@@ -719,6 +723,7 @@ if __name__ == '__main__':
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.multiprocessing.set_start_method('spawn')
+    torch.autograd.set_detect_anomaly(True)
 
     print(f"Using device: {device}")
     import argparse
