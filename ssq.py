@@ -13,47 +13,25 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 import datetime
-
+from model.lstm_attention import LSTM_Attention
+from model.lstm import LSTM_Model
+from model.gru import GRU_Model
+from model.lstm_cnn import CNN_LSTM_Model
 
 def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
     random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False   
 
 def log(message):
     now = datetime.datetime.now()
     timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
     print(f"{timestamp} - {message}")
-
-class LSTMModel(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_layers):
-        super(LSTMModel, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
-        self.fc = nn.Linear(hidden_size, output_size)
-
-        self._init_weights()
-        
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        out = self.fc(out[:, -1, :])  # Use the output from the last time step
-        return out
-
-    def _init_weights(self):
-        for name, param in self.named_parameters():
-            if "weight_ih" in name:
-                torch.nn.init.xavier_uniform_(param)
-            elif "weight_hh" in name:
-                torch.nn.init.orthogonal_(param)
-            elif "bias" in name:
-                torch.nn.init.zeros_(param)
-
 
 class LSTMStackModel(nn.Module):
     def __init__(self, input_size, output_size, hidden_size, num_layers):
@@ -98,79 +76,6 @@ def create_dataset_single_6(data, time_step=1):
         y.append(data[i + time_step])
     return np.array(X), np.array(y)
 
-class AttentionLSTMModel(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_layers):
-        super(AttentionLSTMModel, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
-        self.attention = nn.Linear(hidden_size, 1) 
-        self.fc = nn.Linear(hidden_size, output_size)
-
-        self._init_weights()
-        
-    def forward(self, x):
-        h0 = torch.zeros(self.lstm.num_layers, x.size(0), self.lstm.hidden_size).to(x.device)
-        c0 = torch.zeros(self.lstm.num_layers, x.size(0), self.lstm.hidden_size).to(x.device)
-        out, _ = self.lstm(x, (h0, c0))  # out shape: (batch_size, seq_len, hidden_size)
-        attn_weights = torch.tanh(self.attention(out))  # 计算注意力权重
-        attn_weights = torch.softmax(attn_weights, dim=1)  # 归一化为概率
-        context_vector = torch.sum(attn_weights * out, dim=1)  # 加权求和得到上下文向量
-
-        out = self.fc(context_vector)
-
-        return out
-
-    def _init_weights(self):
-        for name, param in self.named_parameters():
-            if "weight_ih" in name:
-                torch.nn.init.xavier_uniform_(param)
-            elif "weight_hh" in name:
-                torch.nn.init.orthogonal_(param)
-            elif "bias" in name:
-                torch.nn.init.zeros_(param)
-
-class SelfAttention(nn.Module):
-    def __init__(self, embed_size, heads):
-        super(SelfAttention, self).__init__()
-        self.embed_size = embed_size
-        self.heads = heads
-        self.head_dim = embed_size // heads
-
-        assert (
-            self.head_dim * heads == embed_size
-        ), "Embedding size needs to be divisible by heads"
-
-        self.values = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.keys = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.queries = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.fc_out = nn.Linear(heads * self.head_dim, embed_size)
-
-    def forward(self, values, keys, query, mask):
-        N = query.shape[0]  # Batch size
-        value_len, key_len, query_len = values.shape[1], keys.shape[1], query.shape[1]
-
-        # Split the embedding into self.heads different pieces
-        values = values.reshape(N, value_len, self.heads, self.head_dim)
-        keys = keys.reshape(N, key_len, self.heads, self.head_dim)
-        queries = query.reshape(N, query_len, self.heads, self.head_dim)
-
-        # Perform the dot-product attention calculation
-        energy = torch.einsum("nqhd,nkhd->nhqk", [queries, keys])  # (N, heads, query_len, key_len)
-
-        if mask is not None:
-            energy = energy.masked_fill(mask == 0, float("-1e20"))
-
-        attention = torch.softmax(energy / (self.embed_size ** (1 / 2)), dim=3)  # Scaled dot-product attention
-
-        out = torch.einsum("nhql,nlhd->nqhd", [attention, values]).reshape(
-            N, query_len, self.heads * self.head_dim
-        )  # (N, query_len, heads, head_dim) -> (N, query_len, embed_size)
-
-        out = self.fc_out(out)
-        return out
-    
-class LSTMWithSelfAttention(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, num_classes, droupout, embed_size, heads):
         super(LSTMWithSelfAttention, self).__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=droupout)
@@ -193,59 +98,6 @@ class LSTMWithSelfAttention(nn.Module):
             elif "bias" in name:
                 torch.nn.init.zeros_(param)
 
-
-class CNN_LSTM_Model(nn.Module):
-    def __init__(self, input_dim, lstm_hidden_dim, output_dim, num_layers=2, dropout=0.2, kernel_size=3, cnn_out_channels=16):
-        super(CNN_LSTM_Model, self).__init__()
-
-        # 一维卷积层
-        self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=cnn_out_channels, kernel_size=kernel_size, stride=1, padding=1)
-        
-        # 最大池化层（可选）
-        self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
-        
-        # LSTM 层
-        self.lstm = nn.LSTM(input_size=cnn_out_channels, hidden_size=lstm_hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout)
-        
-        # 全连接层
-        self.fc = nn.Linear(lstm_hidden_dim, output_dim)
-
-        self._init_weights()
-        
-    def forward(self, x):
-        # x 的形状是 (batch_size, seq_len, input_dim)
-        
-        # 转换输入以符合 Conv1d 的要求，(batch_size, input_dim, seq_len)
-        x = x.transpose(1, 2)
-        
-        # 卷积操作
-        x = F.relu(self.conv1d(x))
-        
-        # 池化操作（如果需要）
-        x = self.pool(x)
-        
-        # 转换回 LSTM 的输入要求 (batch_size, seq_len, cnn_out_channels)
-        x = x.transpose(1, 2)
-        
-        # LSTM 操作
-        lstm_out, _ = self.lstm(x)
-        
-        # 取最后一个时间步的输出
-        out = lstm_out[:, -1, :]
-        
-        # 全连接层输出
-        out = self.fc(out)
-        
-        return out
-    
-    def _init_weights(self):
-        for name, param in self.named_parameters():
-            if "weight_ih" in name:
-                torch.nn.init.xavier_uniform_(param)
-            elif "weight_hh" in name:
-                torch.nn.init.orthogonal_(param)
-            elif "bias" in name:
-                torch.nn.init.zeros_(param)
 
 class TransformerModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_heads, num_layers, dropout=0.2):
@@ -398,13 +250,11 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
     embed_size = 64
     head_num = 4
 
-    # model = LSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #
-    # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers).to(device) #13
-    # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, dropout, embed_size, head_num).to(device) #8 #6
-    # model = CNN_LSTM_Model(input_size, 64, output_size, num_layers, 0, 3, 16).to(device)  #7 #5
-    model = CNN_LSTM_Model(input_size, 128, output_size, num_layers, 0.2, 3, 16).to(device)  ### #3
-    # model = CNN_LSTM_Model(input_size, 96, output_size, num_layers, 0.2, 3, 32).to(device)  ### #7
-    
+    # model = LSTM_Model(input_size, output_size, hidden_size num_layers, dropout=0).to(device) #
+    # model = GRU_Model(input_size, hidden_size, output_size, num_layers, dropout=0).to(device)
+    # model = CNN_LSTM_Model(input_size, output_size, 64, num_layers, 0, 3, 16).to(device)  #7 #5,3
+    # model = CNN_LSTM_Model(input_size, output_size, 96, num_layers, 0.2, 3, 32).to(device)  ### #4,5
+    model = LSTM_Attention(1, 1, 64, 2, 4, 0.2).to(device)
     num_epochs = 500
     learning_rate = 0.01
     batch_size = 32
@@ -878,8 +728,8 @@ def PredictAtt(device = 'cpu'):
 
 def PredictCnn(device):
     for idx in range(-1, -100, -1):
-        # base, diff, predict, goal = SimpleSingle(7, idx, device)
-        base, diff, predict, goal = SimpleClassifier(7, idx, device)
+        base, diff, predict, goal = SimpleSingle(7, idx, device)
+        # base, diff, predict, goal = SimpleClassifier(7, idx, device)
         session = DataModel.ConnectDB("data/cnn.db")
         row = DataModel.PredictTable()
         row.Basic = int(base)
@@ -910,6 +760,11 @@ def PredictCnn(device):
                 time.sleep(1)
         session.close()
 
+def predict_all():
+    for ball_num in range(1, 8):
+        set_seed(42)
+        SimpleSingle(ball_num, 0, device)
+
 if __name__ == '__main__':
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -929,17 +784,10 @@ if __name__ == '__main__':
     #     Simple(i)
     # Simple6(-2)
     # Simple6(-2)
-    # SimpleSingle(1, 0)
-    # SimpleSingle(2, 0)
-    # SimpleSingle(3, 0)
-    # SimpleSingle(4, 0)
-    # SimpleSingle(5, 0)
-    # SimpleSingle(6, 0)
-    # SimpleSingle(7, 0)
     # SimpleSingle(args.ball_num, args.predict_num)
     # SimpleSingle3d(args.ball_num, args.predict_num)
     # Simple(0)
     # PredictAtt()
     # PredictCnn(device)
-    # SimpleSingle(7, 0, device)
-    SimpleClassifier(7, 0, device)
+    # predict_all()
+    SimpleSingle(args.ball_num, args.predict_num)
