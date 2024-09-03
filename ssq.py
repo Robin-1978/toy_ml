@@ -17,6 +17,7 @@ from model.lstm_attention import LSTM_Attention
 from model.lstm import LSTM_Model
 from model.gru import GRU_Model
 from model.lstm_cnn import CNN_LSTM_Model
+from model.gru_cnn import CNN_GRU_Model
 
 def set_seed(seed):
     random.seed(seed)
@@ -33,35 +34,6 @@ def log(message):
     timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
     print(f"{timestamp} - {message}")
 
-class LSTMStackModel(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_layers):
-        super(LSTMStackModel, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        
-        self.lstm_short = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
-        self.lstm_long = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
-        self.fc = nn.Linear(hidden_size * 2, output_size)
-
-        self._init_weights()
-        
-    def forward(self, X_short, X_long):
-        out_short, _ = self.lstm_short(X_short)
-        out_long, _ = self.lstm_long(X_long)
-        out = torch.cat((out_short, out_long), dim=-1)
-        out = self.fc(out[:, -1, :])  # Use the output from the last time step
-        return out
-
-    def _init_weights(self):
-        for name, param in self.named_parameters():
-            if "weight_ih" in name:
-                torch.nn.init.xavier_uniform_(param)
-            elif "weight_hh" in name:
-                torch.nn.init.orthogonal_(param)
-            elif "bias" in name:
-                torch.nn.init.zeros_(param)
-              
-
 def create_dataset_single(data, time_step=1):
     X, y = [], []
     for i in range(len(data) - time_step):
@@ -75,29 +47,6 @@ def create_dataset_single_6(data, time_step=1):
         X.append(data[i:(i + time_step)])
         y.append(data[i + time_step])
     return np.array(X), np.array(y)
-
-    def __init__(self, input_size, hidden_size, num_layers, num_classes, droupout, embed_size, heads):
-        super(LSTMWithSelfAttention, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=droupout)
-        self.self_attention = SelfAttention(embed_size, heads)
-        self.fc = nn.Linear(hidden_size, num_classes)
-        self._init_weights()
-        
-    def forward(self, x):
-        h_lstm, _ = self.lstm(x)  # LSTM output
-        attention_out = self.self_attention(h_lstm, h_lstm, h_lstm, mask=None)  # Apply Self-Attention
-        out = self.fc(attention_out[:, -1, :])  # Use the output of the last time step
-        return out
-    
-    def _init_weights(self):
-        for name, param in self.named_parameters():
-            if "weight_ih" in name:
-                torch.nn.init.xavier_uniform_(param)
-            elif "weight_hh" in name:
-                torch.nn.init.orthogonal_(param)
-            elif "bias" in name:
-                torch.nn.init.zeros_(param)
-
 
 class TransformerModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_heads, num_layers, dropout=0.2):
@@ -252,9 +201,10 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
 
     # model = LSTM_Model(input_size, output_size, hidden_size num_layers, dropout=0).to(device) #
     # model = GRU_Model(input_size, hidden_size, output_size, num_layers, dropout=0).to(device)
-    # model = CNN_LSTM_Model(input_size, output_size, 64, num_layers, 0, 3, 16).to(device)  #7 #5,3
+    # model = CNN_LSTM_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device)  #7 #5,3
     # model = CNN_LSTM_Model(input_size, output_size, 96, num_layers, 0.2, 3, 32).to(device)  ### #4,5
-    model = LSTM_Attention(1, 1, 64, 2, 4, 0.2).to(device)
+    # model = LSTM_Attention(1, 1, 64, 2, 4, 0).to(device)
+    model = CNN_GRU_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device)  #7 #5,3
     num_epochs = 500
     learning_rate = 0.01
     batch_size = 32
@@ -436,8 +386,8 @@ def Simple6(last_id = 0):
     # model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
     # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
     # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, embed_size, head_num) #8
-    model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 64)  #7
-    
+    # model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 64)  #7
+    model = LSTM_Attention(1, 1, 64, 2, 2, 0)
     num_epochs = 1000
     learning_rate = 0.01
     batch_size = 32
@@ -632,7 +582,7 @@ def Complex(last_id = 0):
     hidden_size = 64
     num_layers = 2
 
-    model = LSTMModel(input_size, output_size, hidden_size, num_layers)
+    model = LSTM_Model(input_size, output_size, hidden_size, num_layers)
 
     num_epochs = 1000
     learning_rate = 0.01
