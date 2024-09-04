@@ -52,13 +52,6 @@ def create_dataset_single_6(data, time_step=1):
         y.append(data[i + time_step])
     return np.array(X), np.array(y)
 
-def create_dataset_multi(X, y, time_step=1):
-    train_X, target_y = [], []
-    for i in range(len(X) - time_step):
-        train_X.append(X[i:(i + time_step)])
-        target_y.append(y[i + time_step])
-    return np.array(train_X), np.array(target_y)
-
 
 def Simple(last_id = 0):
     balls, diff = DataModel.load_ssq_blue_diff()
@@ -150,98 +143,6 @@ def Simple(last_id = 0):
 
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
-def EvaluateModel(model, num, device = 'cpu'):
-    balls, diff = DataModel.load_ssq_single_diff(num)
-    diff_data = diff.dropna().values
-    balls_data = balls[1:].to_numpy() -1
-
-    scaler_ball = MinMaxScaler(feature_range=(-1, 1))
-    scaled_ball_data = scaler_ball.fit_transform(balls_data.reshape(-1, 1))
-
-    scaler_diff = MinMaxScaler(feature_range=(-1, 1))
-    scaled_diff_data = scaler_diff.fit_transform(diff_data.reshape(-1, 1))
-    
-    time_step = 5  # Number of time steps to look back
-    
-    scaled_data = np.column_stack((scaled_ball_data, scaled_diff_data))
-
-    # X, y = create_dataset_single(scaled_data, time_step)
-    X, y = create_dataset_multi(scaled_data, balls_data, time_step)
-
-    tscv = TimeSeriesSplit(n_splits=5)
-    for fold, (train_index, test_index) in enumerate(tscv.split(X)):
-        X_train, X_test = X[train_index], X[test_index]
-        y_train, y_test = y[train_index], y[test_index]
-    
-
-        # Convert to PyTorch tensors
-        X_train = torch.tensor(X_train, dtype=torch.float32).to(device)  # Shape: [samples, time steps, features]
-        y_train = torch.tensor(y_train).to(device)
-        X_test = torch.tensor(X_test, dtype=torch.float32).to(device)  # Shape: [samples, time steps, features]
-        y_test = torch.tensor(y_test)
-
-        model.to(device)
-        num_epochs = 1000
-        learning_rate = 0.01
-        batch_size = 32
-
-        criterion = nn.CrossEntropyLoss()
-
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-        # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
-        dataset = TensorDataset(X_train, y_train)
-        data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-        
-        best_accuracy = 0
-        for epoch in range(num_epochs):
-            model.train()
-            epoch_loss = 0
-            for batch_X, batch_y in data_loader:
-                outputs = model(batch_X)
-                loss = criterion(outputs, batch_y)
-                
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                epoch_loss += loss.item()
-            
-            # Step scheduler after each epoch
-            loss = epoch_loss / len(data_loader)
-            scheduler.step(loss)
-            
-            print(f'epoch {epoch+1}/{num_epochs}, train loss: {loss:.4f}')
-            if (epoch + 1) % 100 == 0:  # Print every 5 epochs
-                log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
-
-            if(scheduler.get_last_lr()[0] < 1e-5):
-                log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
-                break
-
-            with torch.no_grad():
-                model.eval()
-                outputs = model(X_test)
-                predicted = torch.argmax(outputs, dim=1)  # 获取预测类别
-                loss = criterion(outputs, y_test)
-                
-                target = y_test
-                predicted = predicted.cpu().numpy()
-                # 计算评估指标
-                accuracy = accuracy_score(target, predicted)
-                # precision = precision_score(target, predicted, average='weighted')
-                recall = recall_score(target, predicted, average='weighted')
-                f1 = f1_score(target, predicted, average='weighted')
-                conf_matrix = confusion_matrix(target, predicted)
-                print(f'epoch {epoch+1}/{num_epochs}, test loss: {loss:.4f}')
-                if(accuracy > best_accuracy):
-                    best_accuracy = accuracy
-                    # 输出结果
-                    print(f'Accuracy: {accuracy:.4f}')
-                    # print(f'Precision: {precision:.4f}')
-                    print(f'Recall: {recall:.4f}')
-                    print(f'F1 Score: {f1:.4f}')
-                    print('Confusion Matrix:')
-                    print(conf_matrix)
 
 def SimpleSingle(num, last_id = 0, device = 'cpu'):
     balls, diff = DataModel.load_ssq_single_diff(num)
@@ -819,5 +720,4 @@ if __name__ == '__main__':
     # PredictCnn(device)
     # predict_all()
     # SimpleSingle(args.ball_num, args.predict_num)
-    model = LSTM_Model(input_size=2, output_size=16, hidden_size=256, num_layers=3, dropout=0.1)
-    EvaluateModel(model, 7)
+    # model = LSTM_Model(input_size=2, output_size=16, hidden_size=256, num_layers=3, dropout=0.1)
