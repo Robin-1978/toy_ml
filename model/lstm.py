@@ -12,7 +12,7 @@ class LSTM_Model(nn.Module):
             batch_first=True,
             dropout=dropout,
         )
-        self.fc = nn.Linear(hidden_size=hidden_size, output_size=output_size)
+        self.fc = nn.Linear(hidden_size, output_size)
 
         self._init_weights()
 

@@ -1,4 +1,3 @@
-from logging import critical
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,6 +5,8 @@ import torch.nn.functional as F
 import random
 import time
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.model_selection import TimeSeriesSplit
 
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
@@ -20,6 +21,7 @@ from model.gru import GRU_Model
 from model.lstm_cnn import CNN_LSTM_Model
 from model.gru_cnn import CNN_GRU_Model
 from model.lstm_cnn_attn import CNN_LSTM_ATTN
+from model.accuracy_loss import AccuracyLoss
 
 def set_seed(seed):
     random.seed(seed)
@@ -50,34 +52,13 @@ def create_dataset_single_6(data, time_step=1):
         y.append(data[i + time_step])
     return np.array(X), np.array(y)
 
-class TransformerModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_heads, num_layers, dropout=0.2):
-        super(TransformerModel, self).__init__()
-        self.embedding = nn.Linear(input_dim, hidden_dim)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads, dropout=dropout, batch_first=True)
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.fc = nn.Linear(hidden_dim, output_dim)
+def create_dataset_multi(X, y, time_step=1):
+    train_X, target_y = [], []
+    for i in range(len(X) - time_step):
+        train_X.append(X[i:(i + time_step)])
+        target_y.append(y[i + time_step])
+    return np.array(train_X), np.array(target_y)
 
-        self._init_weights()
-
-    def forward(self, x):
-        # x: (sequence_length, batch_size, input_dim)
-        x = self.embedding(x)
-        # x: (sequence_length, batch_size, hidden_dim)
-        x = self.transformer(x)  # (sequence_length, batch_size, hidden_dim)
-        # x = x.permute(1, 0, 2)  # (batch_size, sequence_length, hidden_dim)
-        x = x[:, -1, :]  # (batch_size, hidden_dim)
-        x = self.fc(x)  # Use the last token of the sequence for classification/regression
-        return x
-    
-    def _init_weights(self):
-        for name, param in self.named_parameters():
-            if "weight_ih" in name:
-                torch.nn.init.xavier_uniform_(param)
-            elif "weight_hh" in name:
-                torch.nn.init.orthogonal_(param)
-            elif "bias" in name:
-                torch.nn.init.zeros_(param)
 
 def Simple(last_id = 0):
     balls, diff = DataModel.load_ssq_blue_diff()
@@ -172,85 +153,95 @@ def Simple(last_id = 0):
 def EvaluateModel(model, num, device = 'cpu'):
     balls, diff = DataModel.load_ssq_single_diff(num)
     diff_data = diff.dropna().values
+    balls_data = balls[1:].to_numpy() -1
 
-    # diff_data_train = diff_data
+    scaler_ball = MinMaxScaler(feature_range=(-1, 1))
+    scaled_ball_data = scaler_ball.fit_transform(balls_data.reshape(-1, 1))
 
-    scaler = MinMaxScaler(feature_range=(-1, 1))
-    scaled_data = scaler.fit_transform(diff_data.reshape(-1, 1))
+    scaler_diff = MinMaxScaler(feature_range=(-1, 1))
+    scaled_diff_data = scaler_diff.fit_transform(diff_data.reshape(-1, 1))
     
     time_step = 5  # Number of time steps to look back
     
-    X, y = create_dataset_single(scaled_data, time_step)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    scaled_data = np.column_stack((scaled_ball_data, scaled_diff_data))
 
-    # Convert to PyTorch tensors
-    X_train = torch.tensor(X_train, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
-    y_train = torch.tensor(y_train, dtype=torch.float32).unsqueeze(-1).to(device)
-    X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
-    y_test = torch.tensor(y_test, dtype=torch.float32).unsqueeze(-1).to(device)
+    # X, y = create_dataset_single(scaled_data, time_step)
+    X, y = create_dataset_multi(scaled_data, balls_data, time_step)
 
-    # Create DataLoader for batch processing
-
-
-    # Train the model
-    model.to(device)
-    num_epochs = 500
-    learning_rate = 0.01
-    batch_size = 32
+    tscv = TimeSeriesSplit(n_splits=5)
+    for fold, (train_index, test_index) in enumerate(tscv.split(X)):
+        X_train, X_test = X[train_index], X[test_index]
+        y_train, y_test = y[train_index], y[test_index]
     
-    criterion = nn.L1Loss()
-    # criterion = nn.MSELoss()
-    # criterion = nn.HuberLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-    # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
-    dataset = TensorDataset(X_train, y_train)
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    model.train()
-    for epoch in range(num_epochs):
-        model.train()
-        epoch_loss = 0
-        for batch_X, batch_y in data_loader:
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
+
+        # Convert to PyTorch tensors
+        X_train = torch.tensor(X_train, dtype=torch.float32).to(device)  # Shape: [samples, time steps, features]
+        y_train = torch.tensor(y_train).to(device)
+        X_test = torch.tensor(X_test, dtype=torch.float32).to(device)  # Shape: [samples, time steps, features]
+        y_test = torch.tensor(y_test)
+
+        model.to(device)
+        num_epochs = 1000
+        learning_rate = 0.01
+        batch_size = 32
+
+        criterion = nn.CrossEntropyLoss()
+
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+        # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+        dataset = TensorDataset(X_train, y_train)
+        data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        
+        best_accuracy = 0
+        for epoch in range(num_epochs):
+            model.train()
+            epoch_loss = 0
+            for batch_X, batch_y in data_loader:
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+                
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
             
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-        
-        # Step scheduler after each epoch
-        loss = epoch_loss / len(data_loader)
-        scheduler.step(loss)
-        
-        if (epoch + 1) % 100 == 0:  # Print every 5 epochs
-            log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
+            # Step scheduler after each epoch
+            loss = epoch_loss / len(data_loader)
+            scheduler.step(loss)
+            
+            print(f'epoch {epoch+1}/{num_epochs}, train loss: {loss:.4f}')
+            if (epoch + 1) % 100 == 0:  # Print every 5 epochs
+                log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
 
-        if(scheduler.get_last_lr()[0] < 1e-5):
-            log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
-            break
+            if(scheduler.get_last_lr()[0] < 1e-5):
+                log(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
+                break
 
-    model.eval()
-    outputs = model(X_test)
-    loss = criterion(outputs, y_test)
-    log(f'Loss: {loss:.4f}')
-    predicted_diff_normalized = outputs.detach().numpy()
-    predicted_diff = scaler.inverse_transform(predicted_diff_normalized)
-    y_test = y_test.numpy()  # 真实值也转换为 NumPy 数组
-    y_test = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()  # 逆变换真实值
-    # 计算均方误差和平均绝对误差
-    mse = mean_squared_error(y_test, predicted_diff)
-    rmse = np.sqrt(mse)
-    mae = mean_absolute_error(y_test, predicted_diff)
-    # 计算准确率,误差在 -0.5 和 0.5 之间的比例
-    accuracy = np.mean(np.abs(y_test - predicted_diff) < 0.5)
-
-    # 打印评估指标
-    print(f'Accuracy: {accuracy:.4f}')
-    print(f'Loss: {loss.item():.4f}')
-    print(f'MSE: {mse:.4f}')
-    print(f'RMSE: {rmse:.4f}')
-    print(f'MAE: {mae:.4f}')
+            with torch.no_grad():
+                model.eval()
+                outputs = model(X_test)
+                predicted = torch.argmax(outputs, dim=1)  # 获取预测类别
+                loss = criterion(outputs, y_test)
+                
+                target = y_test
+                predicted = predicted.cpu().numpy()
+                # 计算评估指标
+                accuracy = accuracy_score(target, predicted)
+                # precision = precision_score(target, predicted, average='weighted')
+                recall = recall_score(target, predicted, average='weighted')
+                f1 = f1_score(target, predicted, average='weighted')
+                conf_matrix = confusion_matrix(target, predicted)
+                print(f'epoch {epoch+1}/{num_epochs}, test loss: {loss:.4f}')
+                if(accuracy > best_accuracy):
+                    best_accuracy = accuracy
+                    # 输出结果
+                    print(f'Accuracy: {accuracy:.4f}')
+                    # print(f'Precision: {precision:.4f}')
+                    print(f'Recall: {recall:.4f}')
+                    print(f'F1 Score: {f1:.4f}')
+                    print('Confusion Matrix:')
+                    print(conf_matrix)
 
 def SimpleSingle(num, last_id = 0, device = 'cpu'):
     balls, diff = DataModel.load_ssq_single_diff(num)
@@ -381,8 +372,8 @@ def SimpleSingle3d(num, last_id = 0):
 
     # model = LSTMModel(input_size, output_size, hidden_size, num_layers) #
     # model = AttentionLSTMModel(input_size, output_size, hidden_size, num_layers) #13
-    model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, dropout, embed_size, head_num) #8
-    # model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 16)  #7
+    # model = LSTMWithSelfAttention(input_size, hidden_size, num_layers, output_size, dropout, embed_size, head_num) #8
+    model = CNN_LSTM_Model(input_size, hidden_size, output_size, num_layers, dropout, 3, 16)  #7
     
     num_epochs = 1000
     learning_rate = 0.01
@@ -828,4 +819,5 @@ if __name__ == '__main__':
     # PredictCnn(device)
     # predict_all()
     # SimpleSingle(args.ball_num, args.predict_num)
-    EvaluateModel(CNN_LSTM_Model(1, 1, 64, 2, 0, 3, 16), 7)
+    model = LSTM_Model(input_size=2, output_size=16, hidden_size=256, num_layers=3, dropout=0.1)
+    EvaluateModel(model, 7)
