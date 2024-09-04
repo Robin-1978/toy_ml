@@ -147,7 +147,7 @@ def EvaluateModel(model, hp, num, device = 'cpu'):
         log(f'{fold+1} Lastest train loss: {loss:.4f} test loss: {eval_loss:.4f} test hits: {hits}/{len(y_test)} ({hits/len(y_test) * 100:.2f}%) test same trend: {same_trend}/{len(y_test)} ({same_trend/len(y_test) * 100:.2f}%)')
     
     SaveModel(best_trend_state,hp, f'models/best_trend_state_{num}_{best_global_trend}')
-    SaveModel(best_hits_state,hp, f'models/best_hits_state_{num}_{best_hits_state}')
+    SaveModel(best_hits_state,hp, f'models/best_hits_state_{num}_{best_global_hits}')
     print(f'Best Hits: {best_global_hits}/{len(y_test)} ({best_global_hits/len(y_test) * 100:.2f}%) Best Trend: {best_global_trend}/{len(y_test)} ({best_global_trend/len(y_test) * 100:.2f}%)')
 
 def Final_Train(model, num, device = 'cpu'):
@@ -196,6 +196,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     from model.lstm_cnn import CNN_LSTM_Model
     from model.lstm_cnn import HyperParameters as HP_CNN
-    hpcnn = HP_CNN(2, 1, 96, 3, 0.2, 3, 16)
+    hpcnn = HP_CNN(2, 1, 96, 3, 0.2, 3, 32)
     model = CNN_LSTM_Model(input_size=hpcnn.input_size, output_size=hpcnn.output_size, hidden_size=hpcnn.hidden_size, num_layers=hpcnn.num_layers, dropout=hpcnn.dropout, kernel_size=hpcnn.kernel_size, cnn_out_channels=hpcnn.cnn_out_channels)
     EvaluateModel(model, hpcnn, 7, 'cpu')
