@@ -199,3 +199,27 @@ if __name__ == "__main__":
     hpcnn = HP_CNN(2, 1, 96, 3, 0.2, 3, 32)
     model = CNN_LSTM_Model(input_size=hpcnn.input_size, output_size=hpcnn.output_size, hidden_size=hpcnn.hidden_size, num_layers=hpcnn.num_layers, dropout=hpcnn.dropout, kernel_size=hpcnn.kernel_size, cnn_out_channels=hpcnn.cnn_out_channels)
     EvaluateModel(model, hpcnn, 7, 'cpu')
+
+
+# import optuna
+
+# def objective(trial):
+#     hidden_size = trial.suggest_categorical('hidden_size', [32, 64, 128])
+#     num_layers = trial.suggest_int('num_layers', 1, 3)
+#     dropout = trial.suggest_uniform('dropout', 0.1, 0.3)
+#     learning_rate = trial.suggest_loguniform('learning_rate', 1e-5, 1e-1)
+#     num_epochs = trial.suggest_int('num_epochs', 50, 150)
+
+#     model = CNN_LSTM_Model(input_size=2, output_size=1, hidden_size=hidden_size, num_layers=num_layers, dropout=dropout)
+    
+#     # 定义训练过程
+#     # ...
+    
+#     # 返回验证集上的损失
+#     val_loss = evaluate_model(model)
+#     return val_loss
+
+#     study = optuna.create_study(direction='minimize')
+#     study.optimize(objective, n_trials=50)
+
+#     print(f"Best parameters: {study.best_params}")
