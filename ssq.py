@@ -144,31 +144,39 @@ def Simple(last_id = 0):
     print(f'{last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
 
 
-def SimpleSingle(num, last_id = 0, device = 'cpu'):
+def create_dataset_single(X, y, time_step=1):
+    train_X, target_y = [], []
+    for i in range(len(X) - time_step):
+        train_X.append(X[i : (i + time_step)])
+        target_y.append(y[i + time_step])
+    return np.array(train_X), np.array(target_y)
+
+
+def SimpleSingle(num = 7, last_id = 0, device = 'cpu'):
     balls, diff = DataModel.load_ssq_single_diff(num)
-    # balls, diff = DataModel.load_fc3d_single_diff(num)
-
-    # last_id = -10
-
     diff_data = diff.dropna().values
-    balls_data = balls[1:]
-    if(last_id == 0):
-        last_id = len(diff_data)
-    diff_data_train = diff_data[:last_id]
-    # diff_data_train = diff_data
+    balls_data = balls[1:].to_numpy() - 1
 
-    scaler = MinMaxScaler(feature_range=(-1, 1))
-    scaled_data = scaler.fit_transform(diff_data_train.reshape(-1, 1))
-    
+    scaler_ball = MinMaxScaler(feature_range=(0, 1))
+    scaled_ball_data = scaler_ball.fit_transform(balls_data.reshape(-1, 1))
+
+    scaler_diff = MinMaxScaler(feature_range=(0, 1))
+    scaled_diff_data = scaler_diff.fit_transform(diff_data.reshape(-1, 1))
+
+    # time_step = 5  # Number of time steps to look back
+
+    scaled_data = np.column_stack((scaled_ball_data, scaled_diff_data))
+
     time_step = 5  # Number of time steps to look back
-    
-    X, y = create_dataset_single(scaled_data, time_step)
+    # X, y = create_dataset_single(scaled_data, time_step)
+    X, y = create_dataset_single(scaled_data, scaled_diff_data, time_step)
+
 
     # Convert to PyTorch tensors
-    X = torch.tensor(X, dtype=torch.float32).unsqueeze(-1).to(device)  # Shape: [samples, time steps, features]
-    y = torch.tensor(y, dtype=torch.float32).unsqueeze(-1).to(device)
+    X = torch.tensor(X, dtype=torch.float32).to(device)  # Shape: [samples, time steps, features]
+    y = torch.tensor(y, dtype=torch.float32).to(device)
 
-    input_size = 1
+    input_size = 2
     output_size = 1
     hidden_size = 64
     num_layers = 2
@@ -178,12 +186,13 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
 
     # model = LSTM_Model(input_size, output_size, hidden_size num_layers, dropout=0).to(device) #
     # model = GRU_Model(input_size, hidden_size, output_size, num_layers, dropout=0).to(device)
-    model = CNN_LSTM_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device)  #7 #5,3
+    # model = CNN_LSTM_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device)  #7 #5,3
     # model = CNN_LSTM_Model(input_size, output_size, 96, num_layers, 0.2, 3, 32).to(device)  ### #4,5
     # model = LSTM_Attention(1, 1, 64, 2, 4, 0).to(device)
     # model = CNN_GRU_Model(input_size, output_size, 64, 2, 0, 3, 16).to(device) 
     # model = CNN_LSTM_ATTN(input_size, output_size, 64, 2, 3, 16, 2, 0).to(device)
-    num_epochs = 500
+    model = CNN_LSTM_Model(input_size, output_size, 96, 3, 0.2, 3, 32).to(device)  #7 #5,3
+    num_epochs = 80
     learning_rate = 0.01
     batch_size = 32
 
@@ -204,7 +213,7 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
         model.train()
         epoch_loss = 0
         for batch_X, batch_y in data_loader:
-            outputs = model(batch_X)
+            outputs,_ = model(batch_X)
             loss = criterion(outputs, batch_y)
             
             optimizer.zero_grad()
@@ -224,20 +233,18 @@ def SimpleSingle(num, last_id = 0, device = 'cpu'):
             break
     
     model.eval()
-    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, 1), dtype=torch.float32).to(device)
-    predicted_diff_normalized = model(last_sequence).detach().cpu().numpy()
+    last_sequence = torch.tensor(scaled_data[-time_step:].reshape(1, time_step, input_size), dtype=torch.float32).to(device)
+    predicted_diff_normalized,_ = model(last_sequence)
     print("Predicted difference normalized:", predicted_diff_normalized)
     
-    # Reverse normalization
-    predicted_diff = scaler.inverse_transform(predicted_diff_normalized)
-    print("Predicted difference:", predicted_diff[0][0])
+    predicted_diff = scaler_diff.inverse_transform(predicted_diff_normalized.detach().cpu().numpy())
     
     # Reverse prediction
-    last_observed_value = balls_data.iloc[last_id-1]
+    last_observed_value = balls_data[last_id-1] + 1
     predicted_value = last_observed_value + predicted_diff
 
-    print(f'{num}: {last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls.iloc[last_id]}')
-    return last_observed_value, predicted_diff[0][0], predicted_value[0][0], balls.iloc[last_id]
+    print(f'{num}: {last_observed_value} + {predicted_diff[0][0]} = {predicted_value[0][0]} -> {balls_data[last_id]+1}')
+    return last_observed_value, predicted_diff[0][0], predicted_value[0][0], balls_data[last_id] + 1
 
 def SimpleSingle3d(num, last_id = 0):
     # balls, diff = DataModel.load_ssq_single_diff(num)
@@ -719,5 +726,5 @@ if __name__ == '__main__':
     # PredictAtt()
     # PredictCnn(device)
     # predict_all()
-    # SimpleSingle(args.ball_num, args.predict_num)
+    SimpleSingle(args.ball_num, args.predict_num)
     # model = LSTM_Model(input_size=2, output_size=16, hidden_size=256, num_layers=3, dropout=0.1)

@@ -55,7 +55,7 @@ class CNN_LSTM_Model(nn.Module):
 
         self._init_weights()
         
-    def forward(self, x):
+    def forward(self, x, hidden=None):
         # x 的形状是 (batch_size, seq_len, input_dim)
         # 转换输入以符合 Conv1d 的要求，(batch_size, input_dim, seq_len)
         x = x.transpose(1, 2)
@@ -67,14 +67,14 @@ class CNN_LSTM_Model(nn.Module):
         # 转换回 LSTM 的输入要求 (batch_size, seq_len, cnn_out_channels)
         x = x.transpose(1, 2)
         # LSTM 操作
-        lstm_out, _ = self.lstm(x)
+        lstm_out, hidden = self.lstm(x, hidden)
         # 残差连接 （可选）
         # lstm_out = lstm_out + x
         # 取最后一个时间步的输出
         out = lstm_out[:, -1, :]
         # 全连接层输出
         out = self.fc(out)
-        return out
+        return out, hidden
     
     def _init_weights(self):
         for name, param in self.named_parameters():
