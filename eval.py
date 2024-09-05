@@ -1,4 +1,5 @@
 from re import A
+from sympy import N
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,6 +14,7 @@ import datetime
 import DataModel
 from model.lstm_cnn import CNN_LSTM_Model
 from model.lstm_cnn import HyperParameters as HP_CNN
+from model.accuracy_loss import AccuracyLoss
 
 def set_seed(seed):
     random.seed(seed)
@@ -30,6 +32,53 @@ def log(message):
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     print(f"{timestamp} - {message}")
 
+def calculate_lag_features(window, lag):
+    # 确保滞后期数不超过窗口大小
+    lag = min(lag, len(window) - 1)
+    # 获取滞后特征
+    lag_features = [window[i] for i in range(lag, 0, -1)]
+    return np.array(lag_features).flatten()  # 确保是二维数组转换为一维数组
+
+def calculate_features(window):
+    # 计算统计特征
+    return {
+        'std_dev': np.std(window),
+        'max': np.max(window),
+        'min': np.min(window),
+        'mean': np.mean(window)
+    }
+
+def create_feature_matrix(data, window_size, lag):
+    num_samples = len(data) - window_size + 1
+    feature_matrix = []
+
+    for i in range(num_samples):
+        window = data[i:i + window_size]
+        
+        # 计算滞后特征
+        lag_features = calculate_lag_features(window, lag)
+        
+        # 计算统计特征
+        stats = calculate_features(window)
+        stats_features = [stats['std_dev'], stats['max'], stats['min'], stats['mean']]
+        
+        # 将统计特征转换为一维数组
+        stats_features = np.array(stats_features)
+        
+        # 检查特征的形状
+        print(f"lag_features shape: {lag_features.shape}")
+        print(f"stats_features shape: {stats_features.shape}")
+        
+        # 合并特征
+        features = np.hstack((lag_features, stats_features))
+        
+        feature_matrix.append(features)
+    
+    return np.array(feature_matrix)
+
+def add_original_features(original_features, stats_features):
+    # 合并原始特征和统计特征
+    return np.hstack((original_features, stats_features))
 
 def create_dataset(X, y, time_step=1):
     train_X, target_y = [], []
@@ -38,7 +87,6 @@ def create_dataset(X, y, time_step=1):
         target_y.append(y[i + time_step])
     return np.array(train_X), np.array(target_y)
 
-
 def SaveModel(state_dict, hp, name):
     import json
 
@@ -46,11 +94,118 @@ def SaveModel(state_dict, hp, name):
     with open(name + ".json", "w") as f:
         json.dump(hp.to_dict(), f, indent=4)
 
-def TrendScore(predic_y, target_y):
-    pass
+def EvaluateModel(model, hp, num, num_epochs=80, learning_rate=0.01, time_step = 5, split=0.95, device="cpu"):
+    balls, diff = DataModel.load_ssq_single_diff(num)
+    diff_data = diff.dropna().values
+    balls_data = balls[1:].to_numpy() - 1
 
+    scaler_ball = MinMaxScaler(feature_range=(-1, 1))
+    scaled_ball_data = scaler_ball.fit_transform(balls_data.reshape(-1, 1))
 
-def EvaluateModel(model, hp, num, num_epochs=100, learning_rate=0.01, time_step = 5,device="cpu"):
+    scaler_diff = MinMaxScaler(feature_range=(-1, 1))
+    scaled_diff_data = scaler_diff.fit_transform(diff_data.reshape(-1, 1))
+
+    # time_step = 5  # Number of time steps to look back
+
+    scaled_data = np.column_stack((scaled_ball_data, scaled_diff_data))
+
+    featuremx = create_feature_matrix(scaled_ball_data, time_step, 3)
+    # all_features = add_original_features(scaled_data, featuremx)
+
+    # X, y = create_dataset_single(scaled_data, time_step)
+    X, y = create_dataset(scaled_data, scaled_diff_data, time_step)
+    split_index =int(len(X) * split)
+    train_x = X[:split_index]
+    train_y = y[:split_index]
+    test_x = X[split_index:]
+    test_y = y[split_index:]
+
+    # Convert to PyTorch tensors
+    X_train = torch.tensor(train_x, dtype=torch.float32).to(device)
+    y_train = torch.tensor(train_y, dtype=torch.float32).to(device)
+    X_test = torch.tensor(test_x, dtype=torch.float32).to(device)
+    y_test = torch.tensor(test_y, dtype=torch.float32).to(device)
+
+    model.to(device)
+    batch_size = 32
+
+    # criterion = nn.L1Loss()
+    # criterion = AccuracyLoss(scaler_diff.transform([[0.5]])[0][0], 0.5)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=10
+    )
+    dataset = TensorDataset(X_train, y_train)
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    best_hits = 0
+    best_trend = 0
+    for epoch in range(num_epochs):
+        model.train()
+        hidden = None
+        epoch_loss = 0
+        for batch_X, batch_y in data_loader:
+            optimizer.zero_grad()   
+            if hidden is not None:
+                h, c = hidden
+                if h.size(1) != batch_X.size(0):  
+                    h = h[:, :batch_X.size(0), :].contiguous()
+                    c = c[:, :batch_X.size(0), :].contiguous()
+                    hidden = (h, c)
+            outputs, hidden = model(batch_X, hidden)
+            hidden = (hidden[0].detach(), hidden[1].detach())
+            loss = criterion(outputs, batch_y)
+
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+
+        # Step scheduler after each epoch
+        loss = epoch_loss / len(data_loader)
+        scheduler.step(loss)
+
+        if (epoch + 1) % 5 == 0:  # Print every 5 epochs
+            log(
+                f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}"
+            )
+
+        if scheduler.get_last_lr()[0] < 1e-5:
+            log(
+                f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}"
+            )
+            break
+
+        with torch.no_grad():
+            model.eval()
+            outputs, _= model(X_test)
+            eval_loss = criterion(outputs, y_test)
+            scaled_outputs = scaler_diff.inverse_transform(outputs.cpu().numpy())
+            # scaled_outputs = torch.tensor(scaled_outputs)
+            scaled_ytest = scaler_diff.inverse_transform(y_test.cpu().numpy())
+            # scaled_ytest = torch.tensor(scaled_ytest)
+            same_trend = (
+                ((scaled_ytest * scaled_outputs > 0) | ((scaled_ytest == 0) & (scaled_outputs == 0))).sum()
+            )
+            hits = (np.abs(scaled_ytest - scaled_outputs) < 0.5).sum()
+
+            if (epoch + 1) % 5 == 0:
+                log(f"Epoch [{epoch+1}/{num_epochs}], Test Loss: {eval_loss:.4f}")
+            if same_trend > best_trend:
+                best_trend = same_trend
+                print(
+                    f"Epoch [{epoch+1}/{num_epochs}], Test Same Trend: {same_trend}/{len(y_test)} ({same_trend/len(y_test) * 100:.2f}%)"
+                )
+
+            if hits > best_hits:
+                best_hits = hits
+                print(
+                    f"Epoch [{epoch+1}/{num_epochs}], Test Hits: {hits}/{len(y_test)} ({hits/len(y_test) * 100:.2f}%)"
+                )
+    return  hits, same_trend
+
+def EvaluateModelFold(model, hp, num, num_epochs=100, learning_rate=0.01, time_step = 5,device="cpu"):
     balls, diff = DataModel.load_ssq_single_diff(num)
     diff_data = diff.dropna().values
     balls_data = balls[1:].to_numpy() - 1
@@ -213,7 +368,7 @@ def validate():
     args = parser.parse_args()
 
 
-    hpcnn = HP_CNN(2, 1, 96, 2, 0.2, 3, 32)
+    hpcnn = HP_CNN(2, 1, hidden_size=256, num_layers=3, dropout=0.2, kernel_size=3, cnn_out_channels=[32])
     model = CNN_LSTM_Model(
         input_size=hpcnn.input_size,
         output_size=hpcnn.output_size,
@@ -223,7 +378,7 @@ def validate():
         kernel_size=hpcnn.kernel_size,
         cnn_out_channels=hpcnn.cnn_out_channels,
     )
-    EvaluateModel(model, hpcnn, 7, 100, "cpu")
+    EvaluateModel(model, hpcnn, num= 7, num_epochs=500, learning_rate=0.01, time_step = 12, split=0.95, device=device)
 
 
 import optuna
@@ -232,7 +387,7 @@ def objective_best_hits(trial):
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     hidden_size = trial.suggest_categorical('hidden_size', [8, 16, 32, 64, 128, 256])
-    num_layers = trial.suggest_int('num_layers', 1, 9)
+    num_layers = trial.suggest_int('num_layers', 1, 5)
     dropout = trial.suggest_float('dropout', 0.0, 0.5)
     learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-1)
     num_epochs = trial.suggest_int('num_epochs', 1, 300)
@@ -249,7 +404,7 @@ def objective_best_hits(trial):
         kernel_size=hpcnn.kernel_size,
         cnn_out_channels=hpcnn.cnn_out_channels,
     )
-    hits, trend = EvaluateModel(model, hpcnn, 7, num_epochs, learning_rate, time_step, device)
+    hits, trend = EvaluateModel(model, hpcnn, 7, num_epochs, learning_rate, time_step, 0.95,device)
     return hits
 
 def objective_best_trend(trial):
@@ -273,7 +428,7 @@ def objective_best_trend(trial):
         kernel_size=hpcnn.kernel_size,
         cnn_out_channels=hpcnn.cnn_out_channels,
     )
-    hits, trend = EvaluateModel(model, hpcnn, 7, num_epochs, learning_rate, time_step, device)
+    hits, trend = EvaluateModel(model, hpcnn, 7, num_epochs, learning_rate, time_step, 0.95, device)
     return trend
 
 def auto_validate():
@@ -291,4 +446,5 @@ def auto_validate():
 
 
 if __name__ == "__main__":
-    auto_validate()
+    # auto_validate()
+    validate()

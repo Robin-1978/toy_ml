@@ -316,7 +316,7 @@ def SimpleSingle3d(num, last_id = 0):
         loss = epoch_loss / len(data_loader)
         scheduler.step(loss)
         
-        if (epoch + 1) % 10 == 0:  # Print every 5 epochs
+        if (epoch + 1) % 5 == 0:  # Print every 5 epochs
             print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}')
 
         if(scheduler.get_last_lr()[0] < 1e-5):

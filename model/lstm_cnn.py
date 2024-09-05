@@ -40,16 +40,21 @@ class HyperParameters:
         return cls(**d)
 
 class CNN_LSTM_Model(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_layers=2, dropout=0.2, kernel_size=3, cnn_out_channels=16):
+    def __init__(self, input_size, output_size, hidden_size, num_layers=2, dropout=0.2, kernel_size=3, cnn_out_channels=[16,32,64]):
         super(CNN_LSTM_Model, self).__init__()
         # 一维卷积层
-        self.conv1d = nn.Conv1d(in_channels=input_size, out_channels=cnn_out_channels, kernel_size=kernel_size, stride=1, padding=1)
+        self.conv_layers = nn.ModuleList()
+        in_channels = input_size
+        for out_channels in cnn_out_channels:
+            self.conv_layers.append(nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size, stride=1, padding=1))
+            in_channels = out_channels
+        # self.conv1d = nn.Conv1d(in_channels=input_size, out_channels=cnn_out_channels, kernel_size=kernel_size, stride=1, padding=1)
         
         self.relu = nn.ReLU()
-        # 最大池化层（可选）
+        # # 最大池化层（可选）
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
         # LSTM 层
-        self.lstm = nn.LSTM(input_size=cnn_out_channels, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout)
+        self.lstm = nn.LSTM(input_size=in_channels, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout)
         # 全连接层
         self.fc = nn.Linear(hidden_size, output_size)
 
@@ -60,10 +65,12 @@ class CNN_LSTM_Model(nn.Module):
         # 转换输入以符合 Conv1d 的要求，(batch_size, input_dim, seq_len)
         x = x.transpose(1, 2)
         # 卷积操作
-        x = self.conv1d(x)
-        x = self.relu(x)
+        for conv in self.conv_layers:
+            x = conv(x)
+            x = self.relu(x)
+            x = self.pool(x)
         # 池化操作（如果需要）
-        x = self.pool(x)
+        # x = self.pool(x)
         # 转换回 LSTM 的输入要求 (batch_size, seq_len, cnn_out_channels)
         x = x.transpose(1, 2)
         # LSTM 操作
