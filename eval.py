@@ -66,8 +66,8 @@ def create_feature_matrix(data, window_size, lag):
         stats_features = np.array(stats_features)
         
         # 检查特征的形状
-        print(f"lag_features shape: {lag_features.shape}")
-        print(f"stats_features shape: {stats_features.shape}")
+        # print(f"lag_features shape: {lag_features.shape}")
+        # print(f"stats_features shape: {stats_features.shape}")
         
         # 合并特征
         features = np.hstack((lag_features, stats_features))
