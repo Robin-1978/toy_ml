@@ -5,7 +5,6 @@ import pandas as pd
 import logging
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-from sympy import Float
 
 logging.basicConfig()
 # logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
@@ -79,6 +78,66 @@ def load_ssq():
     table = LoadData("data/ssq.db")
     balls = table[["Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6", 'Ball_7']]
     return balls 
+
+def load_ssq_features(lag = 5, freq = 10):
+    df = LoadData("data/ssq.db")
+    for idx in range(1, 8):
+        ball_name = f'Ball_{idx}'
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df[f'{ball_name}_scale'] = scaler.fit_transform(df[[ball_name]])
+        # lag number
+        for i in range(1, lag + 1):
+            scaler = MinMaxScaler(feature_range=(0, 1))
+            df[f'{ball_name}_lag_{i}'] = df[ball_name].shift(i)
+            df[f'{ball_name}_lag_{i}_scale'] = scaler.fit_transform(df[[f'{ball_name}_lag_{i}']])
+
+        #diff
+        df[f'{ball_name}_diff'] = df[ball_name].diff()
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df[f'{ball_name}_diff_scale'] = scaler.fit_transform(df[[f'{ball_name}_diff']])
+
+        df[f'{ball_name}_freq'] = df[ball_name].rolling(window=freq).apply(lambda x: pd.Series(x).value_counts().max())
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df[f'{ball_name}_freq_scale'] = scaler.fit_transform(df[[f'{ball_name}_freq']])
+
+        df[f'{ball_name}_mean'] = df[ball_name].rolling(window=freq).mean()
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df[f'{ball_name}_mean_scale'] = scaler.fit_transform(df[[f'{ball_name}_mean']])
+
+        df[f'{ball_name}_std'] = df[ball_name].rolling(window=freq).std()
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df[f'{ball_name}_std_scale'] = scaler.fit_transform(df[[f'{ball_name}_std']])
+
+        if idx < 7:
+            df[f'{ball_name}_size'] = df[ball_name].apply(lambda x: 1 if x > 16 else 0)
+        else:
+            df[f'{ball_name}_size'] = df[ball_name].apply(lambda x: 1 if x > 8 else 0)
+        
+        df[f'{ball_name}_odd_even'] = df[ball_name] % 2
+        
+        df[f'{ball_name}_cumsum'] = df[ball_name].cumsum()
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df[f'{ball_name}_cumsum_scale'] = scaler.fit_transform(df[[f'{ball_name}_cumsum']])
+
+        df[f'{ball_name}_cumprod'] = df[ball_name].cumprod()
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df[f'{ball_name}_cumprod_scale'] = scaler.fit_transform(df[[f'{ball_name}_cumprod']])
+
+        df['date'] = pd.to_datetime(df['Date'])
+        df['Month'] = df['date'].dt.month
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df['Month_scale'] = scaler.fit_transform(df[['Month']].values.reshape(-1, 1))
+
+        df['Weekday'] = df['date'].dt.weekday
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df['Weekday_scale'] = scaler.fit_transform(df[['Weekday']].values.reshape(-1, 1))
+
+        df['Day'] = df['date'].dt.day
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        df['Day_scale'] = scaler.fit_transform(df[['Day']].values.reshape(-1, 1))
+
+    df.dropna(inplace=True)
+    return df
 
 def load_ssq_red():
     table = LoadData("data/ssq.db")

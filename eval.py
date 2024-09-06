@@ -10,11 +10,13 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import TimeSeriesSplit
 import random
 import datetime
+from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 
 import DataModel
 from model.lstm_cnn import CNN_LSTM_Model
 from model.lstm_cnn import HyperParameters as HP_CNN
 from model.accuracy_loss import AccuracyLoss
+from model.lstm_attention import LSTM_Attention
 
 def set_seed(seed):
     random.seed(seed)
@@ -94,26 +96,47 @@ def SaveModel(state_dict, hp, name):
     with open(name + ".json", "w") as f:
         json.dump(hp.to_dict(), f, indent=4)
 
-def EvaluateModel(model, hp, num, num_epochs=80, learning_rate=0.01, time_step = 5, split=0.95, device="cpu"):
-    balls, diff = DataModel.load_ssq_single_diff(num)
-    diff_data = diff.dropna().values
-    balls_data = balls[1:].to_numpy() - 1
+def PrepareData(df, features=[], targets=[], window_size=5):
+    X = []
+    y = []
+    for i in range(len(df) - window_size):
+        X.append(df[features].iloc[i:i + window_size].values)
+        y.append(df[targets].iloc[i + window_size])
+    return np.array(X), np.array(y), np.expand_dims(np.array(df[features].iloc[-window_size:]), axis=0)
 
-    scaler_ball = MinMaxScaler(feature_range=(-1, 1))
-    scaled_ball_data = scaler_ball.fit_transform(balls_data.reshape(-1, 1))
+def EvaluateModel(model, num, num_epochs=80, learning_rate=0.01, time_step = 5, split=0.95, device="cpu"):
+    # df = DataModel.load_ssq_features(3, 5)
+    # balls, diff = DataModel.load_ssq_single_diff(num)
+    # diff_data = diff.dropna().values
+    # balls_data = balls[1:].to_numpy() - 1
 
-    scaler_diff = MinMaxScaler(feature_range=(-1, 1))
-    scaled_diff_data = scaler_diff.fit_transform(diff_data.reshape(-1, 1))
+    # scaler_ball = MinMaxScaler(feature_range=(-1, 1))
+    # scaled_ball_data = scaler_ball.fit_transform(balls_data.reshape(-1, 1))
 
-    # time_step = 5  # Number of time steps to look back
+    # scaler_diff = MinMaxScaler(feature_range=(-1, 1))
+    # scaled_diff_data = scaler_diff.fit_transform(diff_data.reshape(-1, 1))
 
-    scaled_data = np.column_stack((scaled_ball_data, scaled_diff_data))
+    # scaled_data = np.column_stack((scaled_ball_data, scaled_diff_data))
 
-    # featuremx = create_feature_matrix(scaled_ball_data, time_step, 3)
-    # all_features = add_original_features(scaled_data, featuremx)
-
-    # X, y = create_dataset_single(scaled_data, time_step)
-    X, y = create_dataset(scaled_data, scaled_diff_data, time_step)
+    # X, y = create_dataset(scaled_data, scaled_diff_data, time_step)
+    df = DataModel.load_ssq_features(3, 12)
+    features=[
+        "Ball_7_scale",
+        "Ball_7_diff_scale",
+        "Ball_7_lag_1_scale",
+        "Ball_7_lag_2_scale",
+        "Ball_7_lag_3_scale",
+        "Ball_7_freq_scale",
+        'Ball_7_mean_scale',
+        'Ball_7_std_scale',
+        'Ball_7_size',
+        'Ball_7_odd_even',
+    ]
+    targets=[
+        "Ball_7",
+    ]
+    X, y, PX = PrepareData(df, features=features, targets=targets, window_size=time_step)
+    y = y - 1
     split_index =int(len(X) * split)
     train_x = X[:split_index]
     train_y = y[:split_index]
@@ -122,16 +145,18 @@ def EvaluateModel(model, hp, num, num_epochs=80, learning_rate=0.01, time_step =
 
     # Convert to PyTorch tensors
     X_train = torch.tensor(train_x, dtype=torch.float32).to(device)
-    y_train = torch.tensor(train_y, dtype=torch.float32).to(device)
+    y_train = torch.tensor(train_y.flatten()).to(device)
     X_test = torch.tensor(test_x, dtype=torch.float32).to(device)
-    y_test = torch.tensor(test_y, dtype=torch.float32).to(device)
+    y_test = torch.tensor(test_y.flatten()).to(device)
+    X_predict = torch.tensor(PX, dtype=torch.float32).to(device)
 
     model.to(device)
     batch_size = 32
 
     # criterion = nn.L1Loss()
     # criterion = AccuracyLoss(scaler_diff.transform([[0.5]])[0][0], 0.5)
-    criterion = nn.MSELoss()
+    # criterion = nn.MSELoss()
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -141,6 +166,7 @@ def EvaluateModel(model, hp, num, num_epochs=80, learning_rate=0.01, time_step =
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     best_hits = 0
+    
     best_trend = 0
     for epoch in range(num_epochs):
         model.train()
@@ -166,7 +192,7 @@ def EvaluateModel(model, hp, num, num_epochs=80, learning_rate=0.01, time_step =
         loss = epoch_loss / len(data_loader)
         scheduler.step(loss)
 
-        if (epoch + 1) % 5 == 0:  # Print every 5 epochs
+        if (epoch + 1) % 1 == 0:  # Print every 5 epochs
             log(
                 f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss:.4f} learning rate: {scheduler.get_last_lr()[0]}"
             )
@@ -181,29 +207,36 @@ def EvaluateModel(model, hp, num, num_epochs=80, learning_rate=0.01, time_step =
             model.eval()
             outputs, _= model(X_test)
             eval_loss = criterion(outputs, y_test)
-            scaled_outputs = scaler_diff.inverse_transform(outputs.cpu().numpy())
-            # scaled_outputs = torch.tensor(scaled_outputs)
-            scaled_ytest = scaler_diff.inverse_transform(y_test.cpu().numpy())
+            predicted_classes = torch.argmax(outputs, dim=1)
             # scaled_ytest = torch.tensor(scaled_ytest)
-            same_trend = (
-                ((scaled_ytest * scaled_outputs > 0) | ((scaled_ytest == 0) & (scaled_outputs == 0))).sum()
-            )
-            hits = (np.abs(scaled_ytest - scaled_outputs) < 0.5).sum()
 
-            if (epoch + 1) % 5 == 0:
-                log(f"Epoch [{epoch+1}/{num_epochs}], Test Loss: {eval_loss:.4f}")
-            if same_trend > best_trend:
-                best_trend = same_trend
-                print(
-                    f"Epoch [{epoch+1}/{num_epochs}], Test Same Trend: {same_trend}/{len(y_test)} ({same_trend/len(y_test) * 100:.2f}%)"
-                )
+            hits = (predicted_classes == y_test).sum().item()
+ 
+            if (epoch + 1) % 1 == 0:
+                # 计算精确率 (Precision)
+                precision = precision_score(y_test, predicted_classes, average='macro', zero_division=0)  # 或 'micro', 'weighted'
+                # 计算召回率 (Recall)
+                recall = recall_score(y_test, predicted_classes, average='macro', zero_division=0)  # 或 'micro', 'weighted'
+                # 计算 F1 分数
+                f1 = f1_score(y_test, predicted_classes, average='macro', zero_division=0)  # 或 'micro', 'weighted'
+                # 计算准确率 (Accuracy)（通常用于多分类任务）
+                accuracy = accuracy_score(y_test, predicted_classes)
+
+                log(f"Epoch [{epoch+1}/{num_epochs}], Test Loss: {eval_loss:.4f} Precision: {precision:.4f} Recall: {recall:.4f} F1: {f1:.4f} Accuracy: {accuracy:.4f}" )
+            # if same_trend > best_trend:
+            #     best_trend = same_trend
+            #     print(
+            #         f"Epoch [{epoch+1}/{num_epochs}], Test Same Trend: {same_trend}/{len(y_test)} ({same_trend/len(y_test) * 100:.2f}%)"
+            #     )
 
             if hits > best_hits:
                 best_hits = hits
+                predicts, _ = model(X_predict)
+                predicts = torch.argmax(predicts, dim=1)
                 print(
-                    f"Epoch [{epoch+1}/{num_epochs}], Test Hits: {hits}/{len(y_test)} ({hits/len(y_test) * 100:.2f}%)"
+                    f"Epoch [{epoch+1}/{num_epochs}], Best Test Hits: {hits}/{len(y_test)} ({hits/len(y_test) * 100:.2f}%) Predict:{predicts+1}"
                 )
-    return  hits, same_trend
+    return  hits
 
 def EvaluateModelFold(model, hp, num, num_epochs=100, learning_rate=0.01, time_step = 5,device="cpu"):
     balls, diff = DataModel.load_ssq_single_diff(num)
@@ -367,8 +400,8 @@ def validate():
     parser.add_argument("-p", "--predict_num", type=int, help="Predict Number", default=0)
     args = parser.parse_args()
 
-
-    hpcnn = HP_CNN(2, 1, hidden_size=256, num_layers=3, dropout=0.2, kernel_size=3, cnn_out_channels=[32])
+    
+    hpcnn = HP_CNN(10, 16, hidden_size=512, num_layers=5, dropout=0.2, kernel_size=3, cnn_out_channels=[64])
     model = CNN_LSTM_Model(
         input_size=hpcnn.input_size,
         output_size=hpcnn.output_size,
@@ -378,7 +411,8 @@ def validate():
         kernel_size=hpcnn.kernel_size,
         cnn_out_channels=hpcnn.cnn_out_channels,
     )
-    EvaluateModel(model, hpcnn, num= 7, num_epochs=500, learning_rate=0.01, time_step = 12, split=0.95, device=device)
+    model = LSTM_Attention(10, 16, hidden_size=64, num_layers=2, num_heads=4, dropout=0.0)
+    EvaluateModel(model, num= 7, num_epochs=500, learning_rate=0.01, time_step = 5, split=0.95, device=device)
 
 
 import optuna
