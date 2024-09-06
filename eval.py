@@ -109,7 +109,7 @@ def EvaluateModel(model, hp, num, num_epochs=80, learning_rate=0.01, time_step =
 
     scaled_data = np.column_stack((scaled_ball_data, scaled_diff_data))
 
-    featuremx = create_feature_matrix(scaled_ball_data, time_step, 3)
+    # featuremx = create_feature_matrix(scaled_ball_data, time_step, 3)
     # all_features = add_original_features(scaled_data, featuremx)
 
     # X, y = create_dataset_single(scaled_data, time_step)

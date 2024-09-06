@@ -75,6 +75,11 @@ def LoadData(name, table_name="ssq"):
     session.close()
     return df
 
+def load_ssq():
+    table = LoadData("data/ssq.db")
+    balls = table[["Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6", 'Ball_7']]
+    return balls 
+
 def load_ssq_red():
     table = LoadData("data/ssq.db")
     reds = table[["Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6"]].values
