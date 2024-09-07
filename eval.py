@@ -271,7 +271,7 @@ def validate():
     #     kernel_size=hpcnn.kernel_size,
     #     cnn_out_channels=hpcnn.cnn_out_channels,
     # )
-    model = LSTM_Attention(9, 16, hidden_size=64, num_layers=2, num_heads=4, dropout=0.0)
+    model = LSTM_Attention(9, 16, hidden_size=128, num_layers=2, num_heads=8, dropout=0.1)
 
     # from model.ml import MLModel
     # model = MLModel(9, 16, hidden_sizes=[64,128], dropout=0.0)

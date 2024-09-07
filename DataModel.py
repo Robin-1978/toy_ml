@@ -89,6 +89,8 @@ def scale_column(column):
     scaled = scaler.fit_transform(column.values.reshape(-1, 1))
     return pd.Series(scaled.flatten(), name=f'{column.name}_scale')
 
+
+
 def load_ssq_features(lag=5, freq=10):
     df = LoadData("data/ssq.db")
     
@@ -193,6 +195,40 @@ def load_fc3d_single_diff(num):
     table = LoadData("data/fc3d.db", 'fc3d')
     table['diff'] = table[f'Ball_{num}'].diff()
     return table[f'Ball_{num}'], table['diff']
+
+def load_3d_features():
+    table = LoadData("data/fc3d.db", 'fc3d')
+    new_columns = []
+
+    for idx in range(1, 4):
+        ball_name = f'Ball_{idx}'
+        new_columns.append(scale_column(table[ball_name]))
+
+        diff_column = table[ball_name].diff()
+        diff_column = diff_column.rename(f'{ball_name}_diff')
+        new_columns.append(diff_column)
+        new_columns.append(scale_column(diff_column))
+        trend_direction = diff_column.apply(lambda x: 2 if x > 0 else (0 if x < 0 else 1))
+        trend_direction = trend_direction.rename(f'{ball_name}_trend')
+        new_columns.append(trend_direction)
+
+        # Rolling mean and standard deviation
+        mean_column = table[ball_name].rolling(window=10).mean()
+        mean_column = mean_column.rename(f'{ball_name}_mean')
+        new_columns.append(mean_column)
+        new_columns.append(scale_column(mean_column))
+
+        std_column = table[ball_name].rolling(window=10).std()
+        std_column = std_column.rename(f'{ball_name}_std')
+        new_columns.append(std_column)
+        new_columns.append(scale_column(std_column))
+    
+    df = pd.concat([table] + new_columns, axis=1)
+    
+    df.dropna(inplace=True)
+    
+    return df
+
 
 def load_ssq_red_diff():
     table = LoadData("data/ssq.db")
