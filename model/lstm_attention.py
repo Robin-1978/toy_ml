@@ -20,7 +20,15 @@ class LSTM_Attention(nn.Module):
         # att_out = att_out + lstm_out
         # max_pool = torch.max(att_out, dim=1)[0]
         # avg_pool = torch.mean(att_out, dim=1)
-        out = self.fc(att_out[:, -1, :])  # Use the output from the last time step
+        max_pool = torch.max(att_out, dim=1)[0]  # Max pooling over time steps
+        avg_pool = torch.mean(att_out, dim=1)    # Average pooling over time steps
+    # You can use sum_pool if needed
+    # sum_pool = torch.sum(att_out, dim=1)
+    
+        # You can choose to use one or a combination of these pooled outputs
+        # Example: Concatenate max pooling and average pooling
+        out = torch.cat([max_pool, avg_pool], dim=1)
+        # out = self.fc(att_out[:, -1, :])  # Use the output from the last time step
         return out, hidden
 
     def _init_weights(self):
