@@ -74,70 +74,105 @@ def LoadData(name, table_name="ssq"):
     session.close()
     return df
 
+def scale_columns(df, columns):
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    df[columns] = scaler.fit_transform(df[columns])
+    return df
+
 def load_ssq():
     table = LoadData("data/ssq.db")
     balls = table[["Ball_1", "Ball_2", "Ball_3", "Ball_4", "Ball_5", "Ball_6", 'Ball_7']]
     return balls 
 
-def load_ssq_features(lag = 5, freq = 10):
+def scale_column(column):
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled = scaler.fit_transform(column.values.reshape(-1, 1))
+    return pd.Series(scaled.flatten(), name=f'{column.name}_scale')
+
+def load_ssq_features(lag=5, freq=10):
     df = LoadData("data/ssq.db")
+    
+    # List to store new columns for later concatenation
+    new_columns = []
+
     for idx in range(1, 8):
         ball_name = f'Ball_{idx}'
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df[f'{ball_name}_scale'] = scaler.fit_transform(df[[ball_name]])
-        # lag number
+        new_columns.append(scale_column(df[ball_name]))
+
+        # Generate lag features
         for i in range(1, lag + 1):
-            scaler = MinMaxScaler(feature_range=(0, 1))
-            df[f'{ball_name}_lag_{i}'] = df[ball_name].shift(i)
-            df[f'{ball_name}_lag_{i}_scale'] = scaler.fit_transform(df[[f'{ball_name}_lag_{i}']])
+            lag_column = df[ball_name].shift(i)
+            lag_column =lag_column.rename(f'{ball_name}_lag_{i}')
+            new_columns.append(lag_column)
+            new_columns.append(scale_column(lag_column))
 
-        #diff
-        df[f'{ball_name}_diff'] = df[ball_name].diff()
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df[f'{ball_name}_diff_scale'] = scaler.fit_transform(df[[f'{ball_name}_diff']])
+        # Difference feature and scaling
+        diff_column = df[ball_name].diff()
+        diff_column = diff_column.rename(f'{ball_name}_diff')
+        new_columns.append(diff_column)
+        new_columns.append(scale_column(diff_column))
 
-        df[f'{ball_name}_freq'] = df[ball_name].rolling(window=freq).apply(lambda x: pd.Series(x).value_counts().max())
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df[f'{ball_name}_freq_scale'] = scaler.fit_transform(df[[f'{ball_name}_freq']])
+        # Frequency feature and scaling
+        freq_column = df[ball_name].rolling(window=freq).apply(lambda x: pd.Series(x).value_counts().max())
+        freq_column = freq_column.rename(f'{ball_name}_freq')
+        new_columns.append(freq_column)
+        new_columns.append(scale_column(freq_column))
 
-        df[f'{ball_name}_mean'] = df[ball_name].rolling(window=freq).mean()
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df[f'{ball_name}_mean_scale'] = scaler.fit_transform(df[[f'{ball_name}_mean']])
+        # Rolling mean and standard deviation
+        mean_column = df[ball_name].rolling(window=freq).mean()
+        mean_column = mean_column.rename(f'{ball_name}_mean')
+        new_columns.append(mean_column)
+        new_columns.append(scale_column(mean_column))
 
-        df[f'{ball_name}_std'] = df[ball_name].rolling(window=freq).std()
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df[f'{ball_name}_std_scale'] = scaler.fit_transform(df[[f'{ball_name}_std']])
+        std_column = df[ball_name].rolling(window=freq).std()
+        std_column = std_column.rename(f'{ball_name}_std')
+        new_columns.append(std_column)
+        new_columns.append(scale_column(std_column))
 
+        # Size, odd/even, cumulative sum, and cumulative product
         if idx < 7:
-            df[f'{ball_name}_size'] = df[ball_name].apply(lambda x: 1 if x > 16 else 0)
+            size_column = df[ball_name].apply(lambda x: 1 if x > 16 else 0)
         else:
-            df[f'{ball_name}_size'] = df[ball_name].apply(lambda x: 1 if x > 8 else 0)
-        
-        df[f'{ball_name}_odd_even'] = df[ball_name] % 2
-        
-        df[f'{ball_name}_cumsum'] = df[ball_name].cumsum()
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df[f'{ball_name}_cumsum_scale'] = scaler.fit_transform(df[[f'{ball_name}_cumsum']])
+            size_column = df[ball_name].apply(lambda x: 1 if x > 8 else 0)
+        new_columns.append(size_column.rename(f'{ball_name}_size'))
 
-        df[f'{ball_name}_cumprod'] = df[ball_name].cumprod()
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df[f'{ball_name}_cumprod_scale'] = scaler.fit_transform(df[[f'{ball_name}_cumprod']])
+        new_columns.append(df[ball_name].mod(2).rename(f'{ball_name}_odd_even'))
 
-        df['date'] = pd.to_datetime(df['Date'])
-        df['Month'] = df['date'].dt.month
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df['Month_scale'] = scaler.fit_transform(df[['Month']].values.reshape(-1, 1))
+        cumsum_column = df[ball_name].cumsum()
+        cumsum_column = cumsum_column.rename(f'{ball_name}_cumsum')
+        new_columns.append(cumsum_column)
+        new_columns.append(scale_column(cumsum_column))
 
-        df['Weekday'] = df['date'].dt.weekday
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df['Weekday_scale'] = scaler.fit_transform(df[['Weekday']].values.reshape(-1, 1))
+        cumprod_column = df[ball_name].cumprod()
+        cumprod_column = cumprod_column.rename(f'{ball_name}_cumprod')
+        new_columns.append(cumprod_column)
+        new_columns.append(scale_column(cumprod_column))
 
-        df['Day'] = df['date'].dt.day
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        df['Day_scale'] = scaler.fit_transform(df[['Day']].values.reshape(-1, 1))
+    # Date-related features
+    df['date'] = pd.to_datetime(df['Date'])
+    month_column = df['date'].dt.month
+    month_column = month_column.rename('Month')
+    new_columns.append(month_column)
+    new_columns.append(scale_column(month_column))
 
+    weekday_column = df['date'].dt.weekday
+    weekday_column = weekday_column.rename('Weekday')
+    new_columns.append(weekday_column)
+    new_columns.append(scale_column(weekday_column))
+
+    day_column = df['date'].dt.day
+    day_column = day_column.rename('Day')
+    new_columns.append(day_column.rename('Day'))
+    new_columns.append(scale_column(day_column))
+
+    # Concatenate all new columns to the original DataFrame
+    df = pd.concat([df] + new_columns, axis=1)
+    
     df.dropna(inplace=True)
+    
     return df
+
+
 
 def load_ssq_red():
     table = LoadData("data/ssq.db")

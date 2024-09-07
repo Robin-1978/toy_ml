@@ -104,6 +104,25 @@ def PrepareData(df, features=[], targets=[], window_size=5):
         y.append(df[targets].iloc[i + window_size])
     return np.array(X), np.array(y), np.expand_dims(np.array(df[features].iloc[-window_size:]), axis=0)
 
+def calculate_trend_accuracy(y_true, y_pred):
+    # Convert to numpy arrays for easier manipulation
+    y_true = y_true.cpu().numpy()
+    y_pred = y_pred.cpu().numpy()
+
+    # Calculate the trend for actual values
+    true_trend = np.diff(y_true)
+    # Calculate the trend for predicted values
+    pred_trend = np.diff(y_pred)
+
+    # Determine the trend direction
+    true_trend_direction = np.sign(true_trend)
+    pred_trend_direction = np.sign(pred_trend)
+
+    # Calculate the trend accuracy
+    trend_accuracy = np.mean(true_trend_direction == pred_trend_direction)
+
+    return trend_accuracy
+
 def EvaluateModel(model, num, num_epochs=80, learning_rate=0.01, time_step = 5, split=0.95, device="cpu"):
     # df = DataModel.load_ssq_features(3, 5)
     # balls, diff = DataModel.load_ssq_single_diff(num)
@@ -123,10 +142,10 @@ def EvaluateModel(model, num, num_epochs=80, learning_rate=0.01, time_step = 5, 
     features=[
         "Ball_7_scale",
         "Ball_7_diff_scale",
-        "Ball_7_lag_1_scale",
-        "Ball_7_lag_2_scale",
-        "Ball_7_lag_3_scale",
-        "Ball_7_freq_scale",
+        # "Ball_7_lag_1_scale",
+        # "Ball_7_lag_2_scale",
+        # "Ball_7_lag_3_scale",
+        # "Ball_7_freq_scale",
         'Ball_7_mean_scale',
         'Ball_7_std_scale',
         'Ball_7_size',
@@ -157,7 +176,7 @@ def EvaluateModel(model, num, num_epochs=80, learning_rate=0.01, time_step = 5, 
     # criterion = AccuracyLoss(scaler_diff.transform([[0.5]])[0][0], 0.5)
     # criterion = nn.MSELoss()
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=10
@@ -222,7 +241,9 @@ def EvaluateModel(model, num, num_epochs=80, learning_rate=0.01, time_step = 5, 
                 # 计算准确率 (Accuracy)（通常用于多分类任务）
                 accuracy = accuracy_score(y_test, predicted_classes)
 
-                log(f"Epoch [{epoch+1}/{num_epochs}], Test Loss: {eval_loss:.4f} Precision: {precision:.4f} Recall: {recall:.4f} F1: {f1:.4f} Accuracy: {accuracy:.4f}" )
+                trend = calculate_trend_accuracy(y_test, predicted_classes)
+
+                log(f"Epoch [{epoch+1}/{num_epochs}], Test Loss: {eval_loss:.4f} Precision: {precision:.4f} Recall: {recall:.4f} F1: {f1:.4f} Accuracy: {accuracy:.4f} Trend: {trend:.4f}" )
             # if same_trend > best_trend:
             #     best_trend = same_trend
             #     print(
@@ -401,7 +422,7 @@ def validate():
     args = parser.parse_args()
 
     
-    hpcnn = HP_CNN(10, 16, hidden_size=512, num_layers=5, dropout=0.2, kernel_size=3, cnn_out_channels=[64])
+    hpcnn = HP_CNN(6, 16, hidden_size=512, num_layers=5, dropout=0.2, kernel_size=3, cnn_out_channels=[64])
     model = CNN_LSTM_Model(
         input_size=hpcnn.input_size,
         output_size=hpcnn.output_size,
@@ -411,7 +432,7 @@ def validate():
         kernel_size=hpcnn.kernel_size,
         cnn_out_channels=hpcnn.cnn_out_channels,
     )
-    model = LSTM_Attention(10, 16, hidden_size=64, num_layers=2, num_heads=4, dropout=0.0)
+    model = LSTM_Attention(6, 16, hidden_size=64, num_layers=2, num_heads=4, dropout=0.0)
     EvaluateModel(model, num= 7, num_epochs=500, learning_rate=0.01, time_step = 5, split=0.95, device=device)
 
 
