@@ -23,7 +23,7 @@ class LSTM_Attention(nn.Module):
         # max_pool = torch.max(att_out, dim=1)[0]  # Max pooling over time steps
         # avg_pool = torch.mean(att_out, dim=1)    # Average pooling over time steps
         # out = torch.cat([max_pool, avg_pool], dim=1)
-        out = self.dropout(out)
+        out = self.dropout(att_out)
         out = self.activation(out)  # 应用激活函数
         # out = self.fc(out)
         out = self.fc(att_out[:, -1, :])  # Use the output from the last time step

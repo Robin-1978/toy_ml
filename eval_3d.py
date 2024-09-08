@@ -6,6 +6,7 @@ import numpy as np
 import random
 import datetime
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
+import shap
 
 import DataModel
 from model.lstm_cnn import CNN_LSTM_Model
@@ -62,6 +63,12 @@ def EvaluateModel(model, num_epochs=80, learning_rate=0.01, time_step = 5, split
         "Ball_1_diff_scale",
         "Ball_2_diff_scale",
         "Ball_3_diff_scale",
+        "Ball_1_size",
+        "Ball_2_size",
+        "Ball_3_size",
+        "Ball_1_odd_even",
+        "Ball_2_odd_even",
+        "Ball_3_odd_even",
         'Ball_1_mean_scale',
         'Ball_2_mean_scale',
         'Ball_3_mean_scale',
@@ -70,7 +77,7 @@ def EvaluateModel(model, num_epochs=80, learning_rate=0.01, time_step = 5, split
         'Ball_3_std_scale',
     ]
     targets=[
-        "Ball_1_trend",
+        "Ball_1_size",
     ]
     X, y, PX = PrepareData(df, features=features, targets=targets, window_size=time_step)
     # y = y - 1
@@ -94,7 +101,8 @@ def EvaluateModel(model, num_epochs=80, learning_rate=0.01, time_step = 5, split
     # criterion = AccuracyLoss(scaler_diff.transform([[0.5]])[0][0], 0.5)
     # criterion = nn.MSELoss()
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    # criterion = nn.BCEWithLogitsLoss()  #输出是1个
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-3)
     # optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=10
@@ -171,8 +179,19 @@ def EvaluateModel(model, num_epochs=80, learning_rate=0.01, time_step = 5, split
                 predicts, _ = model(X_predict)
                 predicts = torch.argmax(predicts, dim=1)
                 print(
-                    f"Epoch [{epoch+1}/{num_epochs}], Best Test Hits: {hits}/{len(y_test)} ({hits/len(y_test) * 100:.2f}%) Predict:{predicts+1}"
+                    f"Epoch [{epoch+1}/{num_epochs}], Best Test Hits: {hits}/{len(y_test)} ({hits/len(y_test) * 100:.2f}%) Predict:{predicts}"
                 )
+    
+    
+    # explainer = shap.KernelExplainer(lambda x: model(x)[0], train_x)
+
+    # # 计算 SHAP 值
+    # # X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    # shap_values = explainer.shap_values(test_x)
+
+    # # 可视化 SHAP 值
+    # shap.summary_plot(shap_values, test_x, feature_names=features)
+
     return  hits
 
 
@@ -235,17 +254,19 @@ def validate():
     # model = LSTM_Attention(12, 10, hidden_size=128, num_layers=3, num_heads=8, dropout=0.2)
     from model.lstm_cnn import CNN_LSTM_Model
     model = CNN_LSTM_Model(
-        input_size=12,
-        output_size=3,
-        hidden_size=128,
-        num_layers=3,
+        input_size=18,
+        output_size=2,
+        hidden_size=256,
+        num_layers=5,
         dropout=0.2,
         kernel_size=3,
-        cnn_out_channels=[64],
+        cnn_out_channels=[16, 32],
     )
     # from model.ml import MLModel
     # model = MLModel(9, 16, hidden_sizes=[64,128], dropout=0.0)
-    EvaluateModel(model, num_epochs=500, learning_rate=0.01, time_step = 12, split=0.95, device=device)
+    from model.lstm_attention import LSTM_Attention
+    model = LSTM_Attention(18, 2, hidden_size=128, num_layers=2, num_heads=8, dropout=0.1)
+    EvaluateModel(model, num_epochs=500, learning_rate=0.01, time_step = 5, split=0.95, device=device)
 
 if __name__ == "__main__":
     # auto_validate()

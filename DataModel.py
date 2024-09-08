@@ -212,6 +212,10 @@ def load_3d_features():
         trend_direction = trend_direction.rename(f'{ball_name}_trend')
         new_columns.append(trend_direction)
 
+        size_column = table[ball_name].apply(lambda x: 1 if x > 4 else 0)
+        new_columns.append(size_column.rename(f'{ball_name}_size'))
+        new_columns.append(table[ball_name].mod(2).rename(f'{ball_name}_odd_even'))
+
         # Rolling mean and standard deviation
         mean_column = table[ball_name].rolling(window=10).mean()
         mean_column = mean_column.rename(f'{ball_name}_mean')
