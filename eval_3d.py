@@ -158,14 +158,16 @@ def EvaluateModel(model, num_epochs=80, learning_rate=0.01, time_step = 5, split
             hits = (predicted_classes == y_test).sum().item()
  
             if (epoch + 1) % 1 == 0:
+                y_test_cpu = y_test.cpu().numpy()
+                predicted_classes_cpu = predicted_classes.cpu().numpy()
                 # 计算精确率 (Precision)
-                precision = precision_score(y_test, predicted_classes, average='macro', zero_division=0)  # 或 'micro', 'weighted'
+                precision = precision_score(y_test_cpu, predicted_classes_cpu, average='macro', zero_division=0)  # 或 'micro', 'weighted'
                 # 计算召回率 (Recall)
-                recall = recall_score(y_test, predicted_classes, average='macro', zero_division=0)  # 或 'micro', 'weighted'
+                recall = recall_score(y_test_cpu, predicted_classes_cpu, average='macro', zero_division=0)  # 或 'micro', 'weighted'
                 # 计算 F1 分数
-                f1 = f1_score(y_test, predicted_classes, average='macro', zero_division=0)  # 或 'micro', 'weighted'
+                f1 = f1_score(y_test_cpu, predicted_classes_cpu, average='macro', zero_division=0)  # 或 'micro', 'weighted'
                 # 计算准确率 (Accuracy)（通常用于多分类任务）
-                accuracy = accuracy_score(y_test, predicted_classes)
+                accuracy = accuracy_score(y_test_cpu, predicted_classes_cpu)
 
                 log(f"Epoch [{epoch+1}/{num_epochs}], Test Loss: {eval_loss:.4f} Precision: {precision:.4f} Recall: {recall:.4f} F1: {f1:.4f} Accuracy: {accuracy:.4f}" )
             # if same_trend > best_trend:
