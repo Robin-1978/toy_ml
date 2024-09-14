@@ -2,62 +2,48 @@ import torch
 import torch.nn as nn
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, hidden_size):
+    def __init__(self, input_size, hidden_size, num_layers):
         super(Encoder, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
 
-    def forward(self, x):
-        # x: (batch_size, seq_len, input_size)
-        outputs, (hidden, cell) = self.lstm(x)
-        return outputs, hidden, cell
+    def forward(self, input):
+        output, (hidden, cell) = self.lstm(input)
+        return output, hidden, cell
     
-class AttentionDecoder(nn.Module):
-    def __init__(self, output_size, hidden_size, num_heads=8):
-        super(AttentionDecoder, self).__init__()
-        self.lstm = nn.LSTM(output_size, hidden_size, batch_first=True)
-        self.attention = nn.MultiheadAttention(embed_dim=hidden_size, num_heads=num_heads)
+    
+class Decoder(nn.Module):
+    def __init__(self, output_size, hidden_size, num_layers):
+        super(Decoder, self).__init__()
+        self.lstm = nn.LSTM(output_size, hidden_size, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x, hidden, cell, encoder_outputs):
-        # x: (batch_size, 1, hidden_size)
-        # encoder_outputs: (batch_size, seq_len, hidden_size)
-
-        # LSTM 层
-        lstm_output, (hidden, cell) = self.lstm(x, (hidden, cell))  # (batch_size, 1, hidden_size)
-
-        # 注意力机制
-        attn_output, attn_weights = self.attention(
-            lstm_output.transpose(0, 1),  # query (seq_len, batch_size, hidden_size)
-            encoder_outputs.transpose(0, 1),  # key (seq_len, batch_size, hidden_size)
-            encoder_outputs.transpose(0, 1)  # value (seq_len, batch_size, hidden_size)
-        )
-        
-        attn_output = attn_output.transpose(0, 1)  # (batch_size, 1, hidden_size)
-
-        # 全连接层，预测
-        prediction = self.fc(attn_output)  # (batch_size, 1, output_size)
-
-        return prediction, hidden, cell
+    def forward(self, input, hidden, cell):
+        output, (hidden, cell) = self.lstm(input, (hidden, cell))
+        output =  self.fc(output)
+        return output, hidden, cell
 
     
-class Seq2SeqWithMultiheadAttention(nn.Module):
-    def __init__(self, encoder, decoder):
-        super(Seq2SeqWithMultiheadAttention, self).__init__()
+
+class Seq2Seq(nn.Module):
+    def __init__(self, encoder, decoder, device):
+        super(Seq2Seq, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.device = device
 
-    def forward(self, source_seq, target_seq_len):
-        # 编码器
-        encoder_outputs, hidden, cell = self.encoder(source_seq)
+    def forward(self, src, trg, teacher_forcing_ratio=0.5):
+        # encoder的输出
+        encoder_outputs, hidden, cell = self.encoder(src)
 
-        # 解码器的初始输入
-        decoder_input = encoder_outputs[:, -1:, :]  # (batch_size, 1, hidden_size)
+        # decoder的输入初始化为<SOS> token
+        decoder_input = trg[:, 0:1]
 
-        outputs = []
-        for t in range(target_seq_len):
-            prediction, hidden, cell = self.decoder(decoder_input, hidden, cell, encoder_outputs)
-            outputs.append(prediction)  # 保存预测结果
-            decoder_input = prediction  # 使用预测结果作为下一时间步的输入
+        # teacher forcing
+        outputs = torch.zeros(trg.shape).to(self.device)
+        for t in range(1, trg.shape[1]):
+            output, hidden, cell = self.decoder(decoder_input, hidden, cell)
+            outputs[:, t] = output
+            teacher_force = random.random() < teacher_forcing_ratio
+            decoder_input = trg[:, t:t+1] if teacher_force else output.max(1)[1].unsqueeze(1)
 
-        outputs = torch.cat(outputs, dim=1)  # 合并所有时间步的结果
         return outputs
