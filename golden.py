@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 
 import DataModel
 from utils import *
-from model import lstm_attention
+from model import lstm_attention, lstm_seq
 
 
 set_seed(42)
@@ -32,19 +32,17 @@ print(f"Using device: {device}")
 
 time_step = 3
 
-df, scaler = DataModel.load_gold_features(5)
+df, scaler = DataModel.load_gold_features(6)
 
 
 features=[
-    # 'Open_scale',
-    # 'High_scale',
-    # 'Low_scale',
+    'Open_scale',
+    'High_scale',
+    'Low_scale',
     'Close_scale',
     'Volume_scale',
     'Close_mean_scale',
     'Close_std_scale',
-    'Close_rsi_scale',
-    'Close_zscore_scale',
     'Close_rsi_scale',
     'Close_zscore_scale',
 ]
@@ -69,8 +67,9 @@ X_predict = torch.tensor(PX, dtype=torch.float32).to(device)
 
 
 batch_size = 16
-num_epochs = 100
+num_epochs = 50
 model = lstm_attention.LSTM_Attention(len(features), len(targets), hidden_size=64, num_layers=2, num_heads=16, dropout=0.1).to(device)
+# model = lstm_seq.Seq2SeqWithMultiheadAttention(encoder=lstm_seq.Encoder(input_size=len(features), hidden_size=64), decoder=lstm_seq.AttentionDecoder(output_size=len(targets), hidden_size=64, num_heads=16)).to(device)
 # criterion = nn.L1Loss()
 criterion = nn.MSELoss()
 # criterion = nn.HuberLoss()
@@ -95,6 +94,7 @@ for epoch in range(num_epochs):
                 c = c[:, :batch_X.size(0), :].contiguous()
                 hidden = (h, c)
         outputs, hidden = model(batch_X, hidden)
+        # outputs = model(batch_X, len(batch_y))
         hidden = (hidden[0].detach(), hidden[1].detach())
         loss = criterion(outputs, batch_y)
 
@@ -162,6 +162,12 @@ with torch.no_grad():
 
     future_predictions = scaler['Close'].inverse_transform(outputs[-len(y_test):].cpu().detach().numpy())
     y_test = scaler['Close'].inverse_transform(y_test.cpu().detach().numpy())
+
+    last, _ = model(X_predict)
+
+    last = scaler['Close'].inverse_transform(last[-len(X_predict):].cpu().detach().numpy())
+
+    print(f"Future predicted prices: {last.flatten()}")
 
 plt.figure(figsize=(12, 6))
 plt.plot(y_test, label='Actual Prices', color='blue')
