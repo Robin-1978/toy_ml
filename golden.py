@@ -1,122 +1,173 @@
 import yfinance as yf
 import numpy as np
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.autograd import Variable
+from torch.utils.data import DataLoader, TensorDataset
 from matplotlib import pyplot as plt
 
-import pandas as pd
-data = pd.read_csv('gold_price_data.csv')
+# ticket = yf.Ticker("XAUUSD=X")
+# gold_data = yf.download("XAUUSD=X", period="max")
+# gold_data.save('gold_price_data_30.csv')
+
+import DataModel
+from utils import *
+from model import lstm_attention
 
 
+set_seed(42)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.multiprocessing.set_start_method("spawn")
+torch.autograd.set_detect_anomaly(True)
+
+print(f"Using device: {device}")
 # 仅使用 "Close" 列 (收盘价)
-data = data[['Close']].dropna()
-# 使用 MinMaxScaler 将数据缩放到 (0, 1)
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data)
-scaled_data = np.expand_dims(scaled_data, axis=-1)
+# data = data[['Close']].dropna()
+# # 使用 MinMaxScaler 将数据缩放到 (0, 1)
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# scaled_data = scaler.fit_transform(data)
+# scaled_data = np.expand_dims(scaled_data, axis=-1)
 # 生成训练集和测试集
-train_size = int(len(scaled_data) * 0.8)  # 使用80%的数据作为训练集
-train_data = scaled_data[:train_size]
-test_data = scaled_data[train_size:]
 
-# 创建函数，将数据转换为LSTM输入格式
-def create_dataset(dataset, time_step=60):
-    X, y = [], []
-    for i in range(len(dataset) - time_step - 1):
-        X.append(dataset[i:(i + time_step), 0])
-        y.append(dataset[i + time_step, 0])
-    return np.array(X), np.array(y)
+time_step = 3
 
-time_step = 5  # 每个输入窗口的大小为60天
-X_train, y_train = create_dataset(train_data, time_step)
-X_test, y_test = create_dataset(test_data, time_step)
+df, scaler = DataModel.load_gold_features(5)
 
-# 将数据转换为 PyTorch 张量
-X_train = torch.from_numpy(X_train).type(torch.Tensor)
-y_train = torch.from_numpy(y_train).type(torch.Tensor)
-X_test = torch.from_numpy(X_test).type(torch.Tensor)
-y_test = torch.from_numpy(y_test).type(torch.Tensor)
 
-# Step 2: 定义 LSTM 模型
-class LSTMModel(nn.Module):
-    def __init__(self, input_size=1, hidden_size=64, num_layers=1, output_size=1):
-        super(LSTMModel, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)
-    
-    def forward(self, x):
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).requires_grad_()
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).requires_grad_()
-        
-        # Forward propagate LSTM
-        out, _ = self.lstm(x, (h0.detach(), c0.detach()))
-        
-        # Decode the hidden state of the last time step
-        out = self.fc(out[:, -1, :])
-        return out
+features=[
+    # 'Open_scale',
+    # 'High_scale',
+    # 'Low_scale',
+    'Close_scale',
+    'Volume_scale',
+    'Close_mean_scale',
+    'Close_std_scale',
+    'Close_rsi_scale',
+    'Close_zscore_scale',
+    'Close_rsi_scale',
+    'Close_zscore_scale',
+]
+targets=[
+    "Close_scale",
+]
 
-# 定义模型、损失函数和优化器
-model = LSTMModel()
-criterion = nn.L1Loss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+split = 0.95
+X, y, PX = PrepareData(df, features=features, targets=targets, window_size=3)
+split_index =int(len(X) * split)
+train_x = X[:split_index]
+train_y = y[:split_index]
+test_x = X[split_index:]
+test_y = y[split_index:]
 
-# Step 3: 训练模型
+# Convert to PyTorch tensors
+X_train = torch.tensor(train_x, dtype=torch.float32).to(device)
+y_train = torch.tensor(train_y, dtype=torch.float32).to(device)
+X_test = torch.tensor(test_x, dtype=torch.float32).to(device)
+y_test = torch.tensor(test_y, dtype=torch.float32).to(device)
+X_predict = torch.tensor(PX, dtype=torch.float32).to(device)
+
+
+batch_size = 16
 num_epochs = 100
+model = lstm_attention.LSTM_Attention(len(features), len(targets), hidden_size=64, num_layers=2, num_heads=16, dropout=0.1).to(device)
+# criterion = nn.L1Loss()
+criterion = nn.MSELoss()
+# criterion = nn.HuberLoss()
+optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
+
+dataset = TensorDataset(X_train, y_train)
+data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+# scheduler = optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.01, steps_per_epoch=len(data_loader), epochs=num_epochs)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10)
+
 for epoch in range(num_epochs):
     model.train()
-    
-    # 将训练数据变成 [batch_size, time_step, features] 格式
-    outputs = model(X_train)
-    optimizer.zero_grad()
-    
-    # 计算损失
-    loss = criterion(outputs, y_train)
-    
-    # 反向传播
-    loss.backward()
-    optimizer.step()
-    
-    if (epoch+1) % 10 == 0:
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
+    hidden = None
+    epoch_loss = 0
+    for batch_X, batch_y in data_loader:
+        optimizer.zero_grad()   
+        if hidden is not None:
+            h, c = hidden
+            if h.size(1) != batch_X.size(0):  
+                h = h[:, :batch_X.size(0), :].contiguous()
+                c = c[:, :batch_X.size(0), :].contiguous()
+                hidden = (h, c)
+        outputs, hidden = model(batch_X, hidden)
+        hidden = (hidden[0].detach(), hidden[1].detach())
+        loss = criterion(outputs, batch_y)
 
-# Step 4: 预测
-model.eval()
-train_predict = model(X_test)
+        loss.backward()
+        optimizer.step()
+        epoch_loss += loss.item()
 
-# 反向缩放预测值到原始范围
-train_predict = train_predict.detach().numpy()
-train_predict = scaler.inverse_transform(train_predict)
-y_test = y_test.detach().numpy()
-y_test = scaler.inverse_transform(y_test.reshape(-1, 1))
+    # Step scheduler after each epoch
+    loss = epoch_loss / len(data_loader)
+    scheduler.step(loss)
+    # scheduler.step()
 
-# 打印测试集的预测结果
-print(f"Predicted prices: {train_predict[:5].flatten()}")
-print(f"Actual prices: {y_test[:5].flatten()}")
+    if (epoch + 1) % 1 == 0:  # Print every 5 epochs
+        log(
+            f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss:.8f} learning rate: {scheduler.get_last_lr()[0]}"
+        )
+
+    if scheduler.get_last_lr()[0] < 1e-5:
+        log(
+            f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss:.8f} learning rate: {scheduler.get_last_lr()[0]}"
+        )
+        break
+
+    model.eval()
+    outputs, _= model(X_test)
+
+    loss = criterion(outputs, y_test)
+
+    if (epoch + 1) % 1 == 0:  # Print every 5 epochs
+        log(
+            f"Epoch [{epoch+1}/{num_epochs}], Test Loss: {loss:.8f}"
+        )
+
+# def predict_future(model, last_data, future_steps=30):
+#     model.eval()
+#     predictions = []
+#     current_data = last_data
+
+#     for _ in range(future_steps):
+
+#         # current_data_tensor = torch.from_numpy(current_data).type(torch.Tensor).unsqueeze(0)
+
+#         next_pred, _ = model(current_data)
+
+#         next_pred_value = next_pred.detach().numpy().reshape(-1)
+#         predictions.append(next_pred_value[0])
+
+#         current_data.append(next_pred_value)
+#         current_data = current_data[1:]
+
+#     return predictions
+
+
+# # last_data = train_data[-time_step:]
+
+
+# future_steps = len(y_test)
+# future_predictions = predict_future(model, X_test[:1], future_steps)
+
+# print(f"Future predicted prices: {future_predictions.flatten()}")
+
+with torch.no_grad():
+    model.eval()
+    outputs, _= model(X_test)
+
+    future_predictions = scaler['Close'].inverse_transform(outputs[-len(y_test):].cpu().detach().numpy())
+    y_test = scaler['Close'].inverse_transform(y_test.cpu().detach().numpy())
 
 plt.figure(figsize=(12, 6))
 plt.plot(y_test, label='Actual Prices', color='blue')
-plt.plot(train_predict, label='Predicted Prices', color='red')
-plt.title('Gold Price Prediction vs Actual')
-plt.xlabel('Time')
+plt.plot(range(len(future_predictions)), future_predictions, label='Predicted Future Prices', color='green')
+plt.title(f'Gold Price Prediction for Next {len(y_test)} Days')
+plt.xlabel('Days')
 plt.ylabel('Gold Price')
 plt.legend()
 plt.show()
-# Step 1: 获取黄金价格数据
-# gold_data = yf.Ticker("GLD")
-# hist = gold_data.history(period="5y")  # 获取5年内的价格数据
-# hist.to_csv('gold_price_data.csv')
-
-# # 仅使用 "Close" 列 (收盘价)
-# data = hist[['Close']].dropna()
-
-
-# 展示
-# plt.plot(data)
-# plt.show()
-

@@ -97,6 +97,94 @@ def scale_column(column, scaler_dict):
     scaler_dict[column.name] = scaler
     return pd.Series(scaled.flatten(), name=f"{column.name}_scale")
 
+def make_mean(column, window_size=7):
+    column = column.rolling(window_size).mean()
+    return column.rename(f"{column.name}_mean")
+
+def make_std(column, window_size=7):
+    column = column.rolling(window_size).std()
+    return column.rename(f"{column.name}_std")
+
+def make_diff(column):
+    column = column.diff()
+    return column.rename(f"{column.name}_diff")
+
+def make_rsi(column, window_size=7):
+    diff = column.diff()
+    up = diff.clip(lower=0)
+    down = -1 * diff.clip(upper=0)
+    ema_up = up.ewm(span=window_size).mean()
+    ema_down = down.ewm(span=window_size).mean()
+    rs = ema_up / ema_down
+    rsi = 100 - (100 / (1 + rs))
+    rsi = rsi.rename(f"{column.name}_rsi")
+    return rsi
+
+def make_zscore(column, window_size=7):
+    column = column.rolling(window_size).mean()
+    column = column.rename(f"{column.name}_zscore")
+    return column
+
+def make_bollinger_bands(column, window_size=7):
+    column_mean = column.rolling(window_size).mean()
+    column_std = column.rolling(window_size).std()
+
+    upper_band = column_mean + 2 * column_std
+    lower_band = column_mean - 2 * column_std
+    upper_band = upper_band.rename(f"{column.name}_upper")
+    lower_band = lower_band.rename(f"{column.name}_lower")
+    return upper_band, lower_band
+
+def make_macd(column, window_size1=12, window_size2=26):
+    column1 = column.ewm(span=window_size1).mean()
+    column2 = column.ewm(span=window_size2).mean()
+    column = column1 - column2
+    column = column.rename(f"{column.name}_macd")
+    return column
+
+def load_gold_features(window_size=7):
+    df = pd.read_csv("data/gold_price_data.csv")
+
+    column_names = ["High", "Low", "Open", "Close", "Volume"]
+    # Dictionary to store scalers
+    scaler_dict = {}
+    # List to store new columns for later concatenation
+    new_columns = []
+    for(column_name) in column_names:
+        #scaled data
+        new_columns.append(scale_column(df[column_name], scaler_dict))
+
+        # diff data
+        diff_column = make_diff(df[column_name])
+        new_columns.append(diff_column)
+        new_columns.append(scale_column(diff_column, scaler_dict))
+
+        ma_column = make_mean(df[column_name], window_size)
+        new_columns.append(ma_column)
+        new_columns.append(scale_column(ma_column, scaler_dict))
+
+
+        std_column = make_std(df[column_name], window_size)
+        new_columns.append(std_column)
+        new_columns.append(scale_column(std_column, scaler_dict))
+
+        rsi_column = diff_column
+        rsi_column = rsi_column.rename(f"{column_name}_rsi")
+        gain = (rsi_column.where(rsi_column > 0, 0)).rolling(window=window_size).mean()
+        loss = (-rsi_column.where(rsi_column < 0, 0)).rolling(window=window_size).mean()
+        rs = gain / loss
+        rsi_column = 100 - (100 / (1 + rs))
+        new_columns.append(rsi_column)
+        new_columns.append(scale_column(rsi_column, scaler_dict))
+
+        zscore_column = (df[column_name] - ma_column) / std_column
+        zscore_column = zscore_column.rename(f"{column_name}_zscore")
+        new_columns.append(zscore_column)
+        new_columns.append(scale_column(zscore_column, scaler_dict))
+
+    df = pd.concat(new_columns, axis=1)
+    df.dropna(inplace=True)
+    return df, scaler_dict
 
 def load_ssq_features(lag=5, freq=10):
     df = LoadData("data/ssq.db")
@@ -348,4 +436,4 @@ def PrepareSSQ(window_size, reds, blue):
 if __name__ == "__main__":
     # red_train, red_target, blue_train, blue_target = PrepareSSQ(3)
     # print(red_train.shape, red_target.shape, blue_train.shape, blue_target.shape)
-    print(load_ssq_blue())
+    print(load_gold_features(3))
